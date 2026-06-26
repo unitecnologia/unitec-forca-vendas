@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import 'api/api_client.dart';
 import 'config.dart';
+import 'log/app_log.dart';
 import 'sync/sync_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -70,10 +71,13 @@ class AppState extends ChangeNotifier {
     if (clean.isEmpty) {
       throw Exception('Informe o endereço do servidor.');
     }
-    final ok = await ApiClient.pingBase(clean, timeout: const Duration(seconds: 5));
-    if (!ok) {
-      throw Exception('Não foi possível encontrar o servidor em $clean.');
+    AppLog.instance.info('conexão', 'Testando $clean');
+    final r = await ApiClient.pingDetailed(clean, timeout: const Duration(seconds: 5));
+    if (!r.ok) {
+      AppLog.instance.error('conexão', 'Falhou em $clean: ${r.message}');
+      throw Exception('Não foi possível conectar em $clean: ${r.message}');
     }
+    AppLog.instance.ok('conexão', 'Conectado a $clean (${r.ms} ms)');
     await _applyConnection(clean);
   }
 
@@ -87,6 +91,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> connectFound(String baseUrl) async {
+    AppLog.instance.ok('conexão', 'Servidor encontrado na rede: $baseUrl');
     await _applyConnection(baseUrl);
   }
 
@@ -105,6 +110,8 @@ class AppState extends ChangeNotifier {
     config.pairingCode = (resp['pairing_code'] ?? '').toString();
     config.deviceApproved = resp['approved'] == true;
     await config.save();
+    AppLog.instance.info('aparelho',
+        'Registrado "${config.deviceName}" — código ${config.pairingCode} (status: ${resp['status'] ?? '-'})');
     notifyListeners();
     return config.pairingCode;
   }
@@ -120,6 +127,11 @@ class AppState extends ChangeNotifier {
     if (approved != config.deviceApproved) {
       config.deviceApproved = approved;
       await config.save();
+      if (approved) {
+        AppLog.instance.ok('aparelho', 'Autorizado pelo administrador');
+      } else {
+        AppLog.instance.warn('aparelho', 'Status mudou para: $status');
+      }
       notifyListeners();
     }
     return status;
@@ -151,6 +163,7 @@ class AppState extends ChangeNotifier {
       config.vendedorId = user['vendedor_id'];
     }
     await config.save();
+    AppLog.instance.ok('login', 'Entrou como ${config.userName} (empresa ${config.empresaNome})');
     sync.start();
     notifyListeners();
   }
@@ -160,6 +173,7 @@ class AppState extends ChangeNotifier {
     await api.logout();
     config.clearSession();
     await config.save();
+    AppLog.instance.info('login', 'Sessão encerrada');
     notifyListeners();
   }
 

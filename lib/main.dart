@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'app_state.dart';
 import 'config.dart';
+import 'log/app_log.dart';
 import 'screens/connect_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -10,6 +11,8 @@ import 'screens/waiting_approval_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppLog.instance.load();
+  AppLog.instance.info('app', 'Aplicativo iniciado');
   final config = await AppConfig.load();
   runApp(UnitecForcaVendasApp(state: AppState(config)));
 }

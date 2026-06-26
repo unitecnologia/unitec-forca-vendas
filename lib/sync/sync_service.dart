@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../config.dart';
 import '../db/local_db.dart';
+import '../log/app_log.dart';
 
 enum SyncStatus { idle, syncing, ok, offline, error }
 
@@ -48,6 +49,7 @@ class SyncService extends ChangeNotifier {
 
   Future<void> syncNow() async {
     if (!config.isLoggedIn) return;
+    final prev = status;
     status = SyncStatus.syncing;
     notifyListeners();
     try {
@@ -59,12 +61,17 @@ class SyncService extends ChangeNotifier {
       await config.save();
       status = SyncStatus.ok;
       lastError = null;
+      if (prev != SyncStatus.ok) {
+        AppLog.instance.ok('sync', 'Sincronizado (pendentes: $pendingCount)');
+      }
     } on ApiException catch (e) {
       status = SyncStatus.error;
       lastError = e.message;
+      AppLog.instance.error('sync', 'Falha: ${e.message}');
     } catch (e) {
       status = SyncStatus.offline;
       lastError = e.toString();
+      AppLog.instance.warn('sync', 'Offline: ${e.toString()}');
     }
     notifyListeners();
   }
@@ -73,6 +80,10 @@ class SyncService extends ChangeNotifier {
     final etag = await _db.getMeta('pull_etag');
     final data = await api.pull(etag: etag);
     if (data == null) return; // 304 — nada mudou
+
+    final prod = (data['products'] as List?)?.length ?? 0;
+    final cli = (data['customers'] as List?)?.length ?? 0;
+    AppLog.instance.info('sync', 'Catálogo atualizado (produtos: $prod, clientes: $cli)');
 
     await _db.upsertAll('products', data['products'] ?? [], (r) => {
           'id': r['id'],
@@ -163,17 +174,27 @@ class SyncService extends ChangeNotifier {
       };
     }).toList();
 
+    AppLog.instance.info('sync', 'Enviando ${orders.length} pedido(s)...');
     final resp = await api.push(orders);
     final results = (resp['results'] as List<dynamic>? ?? []);
+    var enviados = 0;
+    var comErro = 0;
     for (final res in results) {
       final m = Map<String, dynamic>.from(res as Map);
       final uuid = m['uuid']?.toString();
       if (uuid == null) continue;
       if (m['status'] == 'importado') {
         await _db.markOrder(uuid, 'enviado', numero: m['numero']?.toString());
+        enviados++;
       } else if (m['status'] == 'erro') {
         await _db.markOrder(uuid, 'erro', erro: m['erro']?.toString());
+        comErro++;
       }
+    }
+    if (comErro > 0) {
+      AppLog.instance.warn('sync', 'Pedidos: $enviados enviado(s), $comErro com erro');
+    } else {
+      AppLog.instance.ok('sync', 'Pedidos: $enviados enviado(s)');
     }
   }
 

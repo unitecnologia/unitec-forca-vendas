@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
+import 'log_screen.dart';
+import 'network_test_screen.dart';
 
 /// Tela de espera: o aparelho já se registrou no ERP e aguarda o
 /// administrador autorizá-lo. Mostra o código de pareamento e fica
@@ -79,6 +81,20 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
       appBar: AppBar(
         title: const Text('Aguardando autorização'),
         actions: [
+          IconButton(
+            tooltip: 'Testar rede',
+            icon: const Icon(Icons.troubleshoot),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NetworkTestScreen()),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Log',
+            icon: const Icon(Icons.article_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LogScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Trocar servidor',
             icon: const Icon(Icons.lan_outlined),

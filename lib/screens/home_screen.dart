@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../sync/sync_service.dart';
+import 'log_screen.dart';
 import 'novo_pedido_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -46,6 +47,13 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Text(state.config.userName.isEmpty ? 'Unitec Força de Vendas' : state.config.userName),
         actions: [
+          IconButton(
+            tooltip: 'Log',
+            icon: const Icon(Icons.article_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LogScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Sair',
             icon: const Icon(Icons.logout),

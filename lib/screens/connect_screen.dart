@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../net/discovery.dart';
+import 'log_screen.dart';
+import 'network_test_screen.dart';
 
 /// Primeira tela: conecta ao servidor do ERP na rede local.
 /// Busca automática + opção de digitar o IP/porta manualmente.
@@ -91,7 +93,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Widget build(BuildContext context) {
     final ocupado = _buscando || _conectando;
     return Scaffold(
-      appBar: AppBar(title: const Text('Conectar ao servidor')),
+      appBar: AppBar(
+        title: const Text('Conectar ao servidor'),
+        actions: [
+          IconButton(
+            tooltip: 'Ver log',
+            icon: const Icon(Icons.article_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const LogScreen()),
+            ),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -148,6 +161,16 @@ class _ConnectScreenState extends State<ConnectScreen> {
               const SizedBox(height: 20),
               Text(_erro!, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
             ],
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: ocupado
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const NetworkTestScreen()),
+                      ),
+              icon: const Icon(Icons.troubleshoot),
+              label: const Text('Testar rede / diagnóstico'),
+            ),
           ],
         ),
       ),

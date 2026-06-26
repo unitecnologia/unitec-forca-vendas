@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../log/app_log.dart';
 
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
@@ -12,6 +14,16 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Resultado detalhado de um teste de conexão (para a tela de diagnóstico).
+class PingResult {
+  PingResult({required this.ok, required this.message, this.ms, this.serverTime});
+
+  final bool ok;
+  final String message;
+  final int? ms;
+  final String? serverTime;
 }
 
 /// Cliente HTTP da API Força de Vendas do ERP.
@@ -40,15 +52,49 @@ class ApiClient {
   /// Testa se um endereço (base URL) responde como servidor do ERP.
   /// Usado na busca automática na rede e no IP digitado manualmente.
   static Future<bool> pingBase(String baseUrl, {Duration timeout = const Duration(seconds: 2)}) async {
+    final r = await pingDetailed(baseUrl, timeout: timeout);
+    return r.ok;
+  }
+
+  /// Versão detalhada do ping: retorna motivo do erro e latência (diagnóstico).
+  static Future<PingResult> pingDetailed(String baseUrl, {Duration timeout = const Duration(seconds: 5)}) async {
+    final sw = Stopwatch()..start();
     try {
       final uri = Uri.parse('$baseUrl/api/v1/forca-vendas/ping');
       final r = await http.get(uri, headers: {'Accept': 'application/json'}).timeout(timeout);
-      if (r.statusCode != 200) return false;
+      sw.stop();
+      if (r.statusCode != 200) {
+        return PingResult(ok: false, message: 'Respondeu HTTP ${r.statusCode}', ms: sw.elapsedMilliseconds);
+      }
       final body = jsonDecode(r.body);
-      return body is Map && (body['ok'] == true || body['server_time'] != null);
-    } catch (_) {
-      return false;
+      final okBody = body is Map && (body['ok'] == true || body['server_time'] != null);
+      return PingResult(
+        ok: okBody,
+        message: okBody ? 'OK' : 'Resposta inesperada do servidor',
+        ms: sw.elapsedMilliseconds,
+        serverTime: body is Map ? body['server_time']?.toString() : null,
+      );
+    } on TimeoutException {
+      sw.stop();
+      return PingResult(ok: false, message: 'Tempo esgotado (servidor não respondeu)', ms: sw.elapsedMilliseconds);
+    } catch (e) {
+      sw.stop();
+      return PingResult(ok: false, message: _friendlyError(e), ms: sw.elapsedMilliseconds);
     }
+  }
+
+  static String _friendlyError(Object e) {
+    final s = e.toString().toLowerCase();
+    if (s.contains('refused')) {
+      return 'Conexão recusada (o servidor não está ouvindo nessa porta)';
+    }
+    if (s.contains('unreachable') || s.contains('no route') || s.contains('host lookup')) {
+      return 'Sem rota até o servidor (rede diferente ou IP errado?)';
+    }
+    if (s.contains('timed out') || s.contains('timeout')) {
+      return 'Tempo esgotado (servidor não respondeu)';
+    }
+    return e.toString();
   }
 
   Future<bool> ping() async {
@@ -171,6 +217,7 @@ class ApiClient {
       final body = jsonDecode(r.body);
       if (body is Map && body['message'] != null) msg = body['message'].toString();
     } catch (_) {}
+    AppLog.instance.error('api', '${r.request?.url.path ?? ''} → HTTP ${r.statusCode}: $msg');
     throw ApiException(msg, statusCode: r.statusCode);
   }
 }
