@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppConfig {
   AppConfig({
     this.baseUrl = '',
+    this.lastBaseUrl = '',
     this.deviceUuid = '',
     this.deviceName = '',
     this.pairingCode = '',
@@ -20,6 +21,10 @@ class AppConfig {
   });
 
   String baseUrl;
+
+  /// Último endereço que conectou com sucesso (mantido mesmo após desconectar,
+  /// para oferecer "Reconectar" sem digitar de novo).
+  String lastBaseUrl;
   String deviceUuid;
   String deviceName;
   String pairingCode;
@@ -41,6 +46,7 @@ class AppConfig {
 
   Map<String, dynamic> toJson() => {
         'baseUrl': baseUrl,
+        'lastBaseUrl': lastBaseUrl,
         'deviceUuid': deviceUuid,
         'deviceName': deviceName,
         'pairingCode': pairingCode,
@@ -56,6 +62,7 @@ class AppConfig {
 
   static AppConfig fromJson(Map<String, dynamic> j) => AppConfig(
         baseUrl: j['baseUrl'] ?? '',
+        lastBaseUrl: j['lastBaseUrl'] ?? '',
         deviceUuid: j['deviceUuid'] ?? '',
         deviceName: j['deviceName'] ?? '',
         pairingCode: j['pairingCode'] ?? '',

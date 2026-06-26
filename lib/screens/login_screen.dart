@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../app_info.dart';
 import '../app_state.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -185,6 +186,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 16),
                     Text(_erro!, style: const TextStyle(color: Colors.red)),
                   ],
+                  const Spacer(),
+                  Center(
+                    child: Text(
+                      '$kAppName • $kAppVersionLabel',
+                      style: const TextStyle(color: Colors.black38, fontSize: 12),
+                    ),
+                  ),
                 ],
               ),
             ),

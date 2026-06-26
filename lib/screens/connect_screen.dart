@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../app_info.dart';
 import '../app_state.dart';
 import '../net/discovery.dart';
 import 'log_screen.dart';
@@ -25,7 +26,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<AppState>().ensureDeviceIdentity();
+    final state = context.read<AppState>();
+    state.ensureDeviceIdentity();
+    final last = state.config.lastBaseUrl;
+    if (last.isNotEmpty) {
+      _ipCtrl.text = last.replaceFirst(RegExp(r'^https?://'), '');
+    }
   }
 
   @override
@@ -67,8 +73,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
     }
   }
 
-  Future<void> _conectarManual() async {
-    final url = _ipCtrl.text.trim();
+  Future<void> _conectarManual([String? endereco]) async {
+    final url = (endereco ?? _ipCtrl.text).trim();
     if (url.isEmpty) {
       setState(() => _erro = 'Informe o IP do servidor (ex.: 192.168.0.10).');
       return;
@@ -92,6 +98,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   @override
   Widget build(BuildContext context) {
     final ocupado = _buscando || _conectando;
+    final ultimo = context.read<AppState>().config.lastBaseUrl;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Conectar ao servidor'),
@@ -118,6 +125,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
+            if (ultimo.isNotEmpty) ...[
+              FilledButton.icon(
+                onPressed: ocupado ? null : () => _conectarManual(ultimo),
+                icon: const Icon(Icons.replay),
+                label: Text('Reconectar (${ultimo.replaceFirst(RegExp(r'^https?://'), '')})'),
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
+              ),
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: ocupado ? null : _buscarNaRede,
               icon: _buscando
@@ -170,6 +186,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
                       ),
               icon: const Icon(Icons.troubleshoot),
               label: const Text('Testar rede / diagnóstico'),
+            ),
+            const SizedBox(height: 28),
+            Text(
+              '$kAppName • $kAppVersionLabel',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.black38, fontSize: 12),
             ),
           ],
         ),

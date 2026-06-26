@@ -84,6 +84,7 @@ class AppState extends ChangeNotifier {
   /// Salva a conexão encontrada (manual ou automática).
   Future<void> _applyConnection(String baseUrl) async {
     config.baseUrl = baseUrl;
+    config.lastBaseUrl = baseUrl;
     await ensureDeviceIdentity();
     config.deviceApproved = false;
     await config.save();

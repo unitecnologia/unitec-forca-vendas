@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../app_info.dart';
 import '../config.dart';
 import '../log/app_log.dart';
 
@@ -110,7 +111,7 @@ class ApiClient {
   Future<Map<String, dynamic>> registerDevice({
     String? deviceName,
     String platform = 'android',
-    String appVersion = '1.0.0',
+    String appVersion = kAppVersion,
   }) async {
     final r = await _http
         .post(
@@ -166,7 +167,7 @@ class ApiClient {
             'device_uuid': deviceUuid,
             'device_name': deviceName,
             'platform': 'android',
-            'app_version': '1.0.0',
+            'app_version': kAppVersion,
           }),
         )
         .timeout(timeout);
