@@ -109,7 +109,7 @@ class _PairingScreenState extends State<PairingScreen> {
                 MobileScanner(
                   key: ValueKey(_scannerAttempt),
                   onDetect: _onDetect,
-                  errorBuilder: (context, error, child) => _buildCameraError(error),
+                  errorBuilder: (context, error) => _buildCameraError(error),
                 ),
                 IgnorePointer(
                   child: Container(
