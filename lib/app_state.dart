@@ -37,6 +37,32 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Pareamento manual (quando a câmera não funciona): o vendedor digita o
+  /// endereço do servidor + segredo (mostrados na tela do ERP) e escolhe a empresa.
+  Future<void> pairManual({
+    required String url,
+    required String secret,
+    required int empresaId,
+    String empresaNome = '',
+  }) async {
+    final cleanUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
+    if (cleanUrl.isEmpty) {
+      throw Exception('Informe o endereço do servidor.');
+    }
+    if (secret.trim().isEmpty) {
+      throw Exception('Informe o segredo de pareamento.');
+    }
+    config.baseUrl = cleanUrl;
+    config.pairingSecret = secret.trim();
+    config.empresaId = empresaId;
+    config.empresaNome = empresaNome.trim();
+    if (config.deviceUuid.isEmpty) {
+      config.deviceUuid = const Uuid().v4();
+    }
+    await config.save();
+    notifyListeners();
+  }
+
   Future<List<dynamic>> usuariosDaEmpresa() async {
     return api.usuarios(config.empresaId ?? 0);
   }
