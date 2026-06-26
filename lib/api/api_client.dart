@@ -27,7 +27,6 @@ class ApiClient {
     final h = <String, String>{
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'X-FV-Pairing': config.pairingSecret,
       if (config.deviceUuid.isNotEmpty) 'X-FV-Device': config.deviceUuid,
       if (auth && config.token.isNotEmpty) 'Authorization': 'Bearer ${config.token}',
     };
@@ -38,15 +37,56 @@ class ApiClient {
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('${config.apiBase}/$path').replace(queryParameters: query);
 
+  /// Testa se um endereço (base URL) responde como servidor do ERP.
+  /// Usado na busca automática na rede e no IP digitado manualmente.
+  static Future<bool> pingBase(String baseUrl, {Duration timeout = const Duration(seconds: 2)}) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/v1/forca-vendas/ping');
+      final r = await http.get(uri, headers: {'Accept': 'application/json'}).timeout(timeout);
+      if (r.statusCode != 200) return false;
+      final body = jsonDecode(r.body);
+      return body is Map && (body['ok'] == true || body['server_time'] != null);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> ping() async {
     try {
-      final r = await _http
-          .get(_uri('ping'), headers: _headers())
-          .timeout(timeout);
+      final r = await _http.get(_uri('ping'), headers: _headers()).timeout(timeout);
       return r.statusCode == 200;
     } catch (_) {
       return false;
     }
+  }
+
+  /// Registra o aparelho no ERP (status "pendente" até o admin autorizar).
+  Future<Map<String, dynamic>> registerDevice({
+    String? deviceName,
+    String platform = 'android',
+    String appVersion = '1.0.0',
+  }) async {
+    final r = await _http
+        .post(
+          _uri('devices/register'),
+          headers: _headers(),
+          body: jsonEncode({
+            'device_uuid': config.deviceUuid,
+            'device_name': deviceName ?? config.deviceName,
+            'platform': platform,
+            'app_version': appVersion,
+          }),
+        )
+        .timeout(timeout);
+    return _decode(r);
+  }
+
+  /// Consulta o status de autorização do aparelho.
+  Future<Map<String, dynamic>> deviceStatus() async {
+    final r = await _http
+        .get(_uri('devices/status', {'device_uuid': config.deviceUuid}), headers: _headers())
+        .timeout(timeout);
+    return _decode(r);
   }
 
   Future<Map<String, dynamic>> info() async {

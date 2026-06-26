@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -16,66 +15,135 @@ class AppState extends ChangeNotifier {
   final ApiClient api;
   late final SyncService sync;
 
-  bool get isPaired => config.isPaired;
+  bool get isConnected => config.isConnected;
+  bool get isApproved => config.isApproved;
   bool get isLoggedIn => config.isLoggedIn;
 
-  /// Lê o conteúdo de um QR de pareamento e salva a configuração.
-  /// Espera JSON: {"v":1,"url":"http://ip:8765","secret":"...","empresa_id":1,"empresa":"..."}
-  Future<void> pairFromQr(String raw) async {
-    final data = jsonDecode(raw) as Map<String, dynamic>;
-    if (data['app'] != 'unitec-forca-vendas') {
-      throw Exception('QR Code inválido para este aplicativo.');
-    }
-    config.baseUrl = (data['url'] ?? '').toString();
-    config.pairingSecret = (data['secret'] ?? '').toString();
-    config.empresaId = data['empresa_id'] is int ? data['empresa_id'] : int.tryParse('${data['empresa_id']}');
-    config.empresaNome = (data['empresa'] ?? '').toString();
+  /// Garante um identificador único e um nome padrão (modelo do aparelho).
+  Future<void> ensureDeviceIdentity() async {
+    var changed = false;
     if (config.deviceUuid.isEmpty) {
       config.deviceUuid = const Uuid().v4();
+      changed = true;
     }
-    await config.save();
-    notifyListeners();
+    if (config.deviceName.isEmpty) {
+      config.deviceName = await _defaultDeviceName();
+      changed = true;
+    }
+    if (changed) {
+      await config.save();
+      notifyListeners();
+    }
   }
 
-  /// Pareamento manual (quando a câmera não funciona): o vendedor digita o
-  /// endereço do servidor + segredo (mostrados na tela do ERP) e escolhe a empresa.
-  Future<void> pairManual({
-    required String url,
-    required String secret,
-    required int empresaId,
-    String empresaNome = '',
-  }) async {
-    final cleanUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
-    if (cleanUrl.isEmpty) {
+  Future<String> _defaultDeviceName() async {
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      final brand = info.brand.isNotEmpty
+          ? '${info.brand[0].toUpperCase()}${info.brand.substring(1)}'
+          : '';
+      final name = '$brand ${info.model}'.trim();
+      return name.isEmpty ? 'Aparelho Android' : name;
+    } catch (_) {
+      return 'Aparelho Android';
+    }
+  }
+
+  String _normalizarUrl(String input, {int defaultPort = 8765}) {
+    var s = input.trim();
+    if (s.isEmpty) return s;
+    if (!s.startsWith('http://') && !s.startsWith('https://')) {
+      s = 'http://$s';
+    }
+    s = s.replaceAll(RegExp(r'/+$'), '');
+    // Se não tiver porta explícita, usa a padrão do ERP.
+    final uri = Uri.tryParse(s);
+    if (uri != null && !uri.hasPort) {
+      s = '${uri.scheme}://${uri.host}:$defaultPort';
+    }
+    return s;
+  }
+
+  /// Conecta a um endereço (IP/porta) digitado manualmente.
+  Future<void> connectManual(String url) async {
+    final clean = _normalizarUrl(url);
+    if (clean.isEmpty) {
       throw Exception('Informe o endereço do servidor.');
     }
-    if (secret.trim().isEmpty) {
-      throw Exception('Informe o segredo de pareamento.');
+    final ok = await ApiClient.pingBase(clean, timeout: const Duration(seconds: 5));
+    if (!ok) {
+      throw Exception('Não foi possível encontrar o servidor em $clean.');
     }
-    config.baseUrl = cleanUrl;
-    config.pairingSecret = secret.trim();
-    config.empresaId = empresaId;
-    config.empresaNome = empresaNome.trim();
-    if (config.deviceUuid.isEmpty) {
-      config.deviceUuid = const Uuid().v4();
-    }
+    await _applyConnection(clean);
+  }
+
+  /// Salva a conexão encontrada (manual ou automática).
+  Future<void> _applyConnection(String baseUrl) async {
+    config.baseUrl = baseUrl;
+    await ensureDeviceIdentity();
+    config.deviceApproved = false;
     await config.save();
     notifyListeners();
   }
 
-  Future<List<dynamic>> usuariosDaEmpresa() async {
-    return api.usuarios(config.empresaId ?? 0);
+  Future<void> connectFound(String baseUrl) async {
+    await _applyConnection(baseUrl);
   }
 
-  Future<void> login(int userId, String senha, {String? deviceName}) async {
+  /// Atualiza o nome do aparelho (mostrado ao admin).
+  Future<void> setDeviceName(String name) async {
+    config.deviceName = name.trim();
+    await config.save();
+    notifyListeners();
+  }
+
+  /// Registra o aparelho no ERP (cria a solicitação de autorização).
+  /// Retorna o código de pareamento para o vendedor conferir no ERP.
+  Future<String> registerDevice() async {
+    await ensureDeviceIdentity();
+    final resp = await api.registerDevice(deviceName: config.deviceName);
+    config.pairingCode = (resp['pairing_code'] ?? '').toString();
+    config.deviceApproved = resp['approved'] == true;
+    await config.save();
+    notifyListeners();
+    return config.pairingCode;
+  }
+
+  /// Consulta o status de autorização. Retorna o status textual do servidor.
+  Future<String> refreshApproval() async {
+    final resp = await api.deviceStatus();
+    final status = (resp['status'] ?? 'desconhecido').toString();
+    final approved = resp['approved'] == true;
+    if (resp['pairing_code'] != null) {
+      config.pairingCode = resp['pairing_code'].toString();
+    }
+    if (approved != config.deviceApproved) {
+      config.deviceApproved = approved;
+      await config.save();
+      notifyListeners();
+    }
+    return status;
+  }
+
+  Future<Map<String, dynamic>> info() async {
+    return api.info();
+  }
+
+  Future<List<dynamic>> usuariosDaEmpresa(int empresaId) async {
+    return api.usuarios(empresaId);
+  }
+
+  Future<void> login(int empresaId, int userId, String senha, {String? empresaNome}) async {
     final resp = await api.login(
-      empresaId: config.empresaId ?? 0,
+      empresaId: empresaId,
       userId: userId,
       senha: senha,
       deviceUuid: config.deviceUuid,
-      deviceName: deviceName,
+      deviceName: config.deviceName,
     );
     config.token = (resp['token'] ?? '').toString();
+    config.empresaId = empresaId;
+    if (empresaNome != null) config.empresaNome = empresaNome;
     final user = resp['user'] as Map<String, dynamic>?;
     if (user != null) {
       config.userId = user['id'];
@@ -95,12 +163,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Remove o pareamento (volta à tela inicial de configuração).
-  Future<void> unpair() async {
+  /// Desconecta totalmente (volta à tela de conexão). Mantém o device_uuid
+  /// para que, ao reconectar, o ERP reconheça o mesmo aparelho.
+  Future<void> disconnect() async {
     sync.stop();
     config
       ..baseUrl = ''
-      ..pairingSecret = ''
+      ..deviceApproved = false
+      ..pairingCode = ''
       ..empresaId = null
       ..empresaNome = ''
       ..clearSession();

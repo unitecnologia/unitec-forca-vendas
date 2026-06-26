@@ -2,33 +2,38 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Configuração de pareamento + sessão, persistida no aparelho.
+/// Configuração de conexão + autorização do aparelho + sessão, persistida.
 class AppConfig {
   AppConfig({
     this.baseUrl = '',
-    this.pairingSecret = '',
+    this.deviceUuid = '',
+    this.deviceName = '',
+    this.pairingCode = '',
+    this.deviceApproved = false,
     this.empresaId,
     this.empresaNome = '',
     this.token = '',
     this.userId,
     this.userName = '',
     this.vendedorId,
-    this.deviceUuid = '',
     this.lastSyncIso,
   });
 
   String baseUrl;
-  String pairingSecret;
+  String deviceUuid;
+  String deviceName;
+  String pairingCode;
+  bool deviceApproved;
   int? empresaId;
   String empresaNome;
   String token;
   int? userId;
   String userName;
   int? vendedorId;
-  String deviceUuid;
   String? lastSyncIso;
 
-  bool get isPaired => baseUrl.isNotEmpty && pairingSecret.isNotEmpty;
+  bool get isConnected => baseUrl.isNotEmpty;
+  bool get isApproved => deviceApproved;
   bool get isLoggedIn => token.isNotEmpty;
 
   /// Base completa da API de força de vendas.
@@ -36,27 +41,31 @@ class AppConfig {
 
   Map<String, dynamic> toJson() => {
         'baseUrl': baseUrl,
-        'pairingSecret': pairingSecret,
+        'deviceUuid': deviceUuid,
+        'deviceName': deviceName,
+        'pairingCode': pairingCode,
+        'deviceApproved': deviceApproved,
         'empresaId': empresaId,
         'empresaNome': empresaNome,
         'token': token,
         'userId': userId,
         'userName': userName,
         'vendedorId': vendedorId,
-        'deviceUuid': deviceUuid,
         'lastSyncIso': lastSyncIso,
       };
 
   static AppConfig fromJson(Map<String, dynamic> j) => AppConfig(
         baseUrl: j['baseUrl'] ?? '',
-        pairingSecret: j['pairingSecret'] ?? '',
+        deviceUuid: j['deviceUuid'] ?? '',
+        deviceName: j['deviceName'] ?? '',
+        pairingCode: j['pairingCode'] ?? '',
+        deviceApproved: j['deviceApproved'] ?? false,
         empresaId: j['empresaId'],
         empresaNome: j['empresaNome'] ?? '',
         token: j['token'] ?? '',
         userId: j['userId'],
         userName: j['userName'] ?? '',
         vendedorId: j['vendedorId'],
-        deviceUuid: j['deviceUuid'] ?? '',
         lastSyncIso: j['lastSyncIso'],
       );
 
@@ -80,7 +89,7 @@ class AppConfig {
     await prefs.setString(_key, jsonEncode(toJson()));
   }
 
-  /// Limpa apenas a sessão (mantém o pareamento).
+  /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
   void clearSession() {
     token = '';
     userId = null;

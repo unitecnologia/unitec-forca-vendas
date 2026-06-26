@@ -6,12 +6,16 @@ pela API `/api/v1/forca-vendas`. Funciona sem internet e sincroniza a cada ~30s
 
 ## Como funciona
 
-1. No ERP (painel admin) abra **App Força de Vendas** (`/admin/forca-vendas-app`) e mostre o QR Code.
-2. No app, toque em **Parear com o servidor** e leia o QR (configura URL + segredo de pareamento).
-3. O vendedor entra com o **usuário do ERP** e a **senha do app** (campo
+1. No app, toque em **Procurar servidor na rede** (ou digite o IP, porta padrão `8765`).
+2. O app se registra e mostra um **código de autorização** + o nome do aparelho.
+3. No ERP, em **Força de Vendas → Aparelhos**, o admin confere o código e pressiona
+   <kbd>F2</kbd> para **autorizar** o aparelho (ou <kbd>F4</kbd> para revogar).
+4. O vendedor entra com o **usuário do ERP** e a **senha do app** (campo
    "Senha App Força de Vendas" no cadastro de usuários).
-4. O app baixa o catálogo e passa a funcionar offline. Pedidos ficam numa fila local
+5. O app baixa o catálogo e passa a funcionar offline. Pedidos ficam numa fila local
    (SQLite) e sobem automaticamente quando há rede.
+
+> Não usa câmera/QR Code: a autorização é feita pelo administrador no ERP.
 
 ## Pré-requisitos
 
@@ -37,7 +41,8 @@ Edite `android/app/src/main/AndroidManifest.xml`:
 ```xml
 <manifest ...>
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
@@ -48,9 +53,6 @@ Edite `android/app/src/main/AndroidManifest.xml`:
     </application>
 </manifest>
 ```
-
-Defina também `minSdkVersion 21` (ou superior) em `android/app/build.gradle`
-(necessário para `mobile_scanner`).
 
 ## Rodar em desenvolvimento
 
@@ -75,7 +77,7 @@ Esta pasta já vem pronta para o **Codemagic**:
 
 - `codemagic.yaml` — workflow que gera a pasta `android/`, aplica o manifesto e
   compila o APK release.
-- `ci/AndroidManifest.xml` — manifesto com as permissões (câmera, localização,
+- `ci/AndroidManifest.xml` — manifesto com as permissões (rede, localização,
   internet) e `usesCleartextTraffic` (HTTP na LAN). O CI copia este arquivo por cima
   do gerado pelo `flutter create`.
 - `.gitignore` — a pasta `android/` **não** é versionada (é gerada a cada build).
@@ -99,25 +101,29 @@ Passos:
 
 ```
 lib/
-  main.dart            # roteia: pareamento -> login -> home
-  config.dart          # configuração persistida (url, segredo, token, device uuid)
-  app_state.dart       # estado global (pareamento, login, sync)
+  main.dart            # roteia: conectar -> aguardando autorização -> login -> home
+  config.dart          # configuração persistida (url, device uuid/nome, token)
+  app_state.dart       # estado global (conexão, registro/autorização, login, sync)
   api/api_client.dart  # cliente HTTP da API do ERP
+  net/discovery.dart   # busca automática do servidor na LAN (ping)
   db/local_db.dart     # SQLite (catálogo + fila de pedidos)
   sync/sync_service.dart # sync 30s (pull ETag + push idempotente)
   screens/
-    pairing_screen.dart  # leitura do QR
-    login_screen.dart    # usuário + senha do app
-    home_screen.dart     # status de sync + contadores
-    novo_pedido_screen.dart # criar pedido/orçamento offline (com GPS)
+    connect_screen.dart          # procurar servidor / digitar IP
+    waiting_approval_screen.dart # registro + código + espera de autorização
+    login_screen.dart            # empresa + usuário + senha do app
+    home_screen.dart             # status de sync + contadores
+    novo_pedido_screen.dart      # criar pedido/orçamento offline (com GPS)
 ```
 
 ## Endpoints usados (ERP)
 
-- `GET  /ping`, `GET /info`, `GET /users?empresa_id=`
-- `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
+- `GET  /ping`, `POST /devices/register`, `GET /devices/status` (públicos)
+- `GET  /info`, `GET /users?empresa_id=`, `POST /auth/login` (exigem aparelho autorizado)
+- `POST /auth/logout`, `GET /auth/me`
 - `GET  /sync/pull` (suporta `?since=` e `If-None-Match`/ETag → 304)
 - `POST /sync/push` (idempotente por `uuid`)
 
-Todos exigem o header `X-FV-Pairing: <segredo>` (vem do QR). As rotas autenticadas
-usam `Authorization: Bearer <token>` (Sanctum).
+O acesso é liberado pela **autorização do aparelho** (header `X-FV-Device: <uuid>`,
+aprovado pelo admin no ERP). As rotas autenticadas usam `Authorization: Bearer <token>`
+(Sanctum).
