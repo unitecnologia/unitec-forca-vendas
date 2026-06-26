@@ -132,13 +132,13 @@ class _NetworkTestScreenState extends State<NetworkTestScreen> {
         if (mounted) setState(() => _resultadoVarredura = 'Procurando... ($done/$total)');
       },
     );
-    AppLog.instance.info('rede', found == null ? 'Varredura: nenhum servidor na porta 8765' : 'Varredura encontrou: $found');
+    AppLog.instance.info('rede', found == null ? 'Varredura: nenhum servidor nas portas 8765/8000' : 'Varredura encontrou: $found');
     if (mounted) {
       setState(() {
         _varrendo = false;
         _encontrado = found;
         _resultadoVarredura = found == null
-            ? 'Nenhum servidor respondeu na porta 8765. Verifique se o ERP está ligado e na mesma rede.'
+            ? 'Nenhum servidor respondeu nas portas 8765 ou 8000. Verifique se o ERP está ligado, publicado na rede (host 0.0.0.0) e na mesma rede do celular.'
             : 'Servidor encontrado: $found';
       });
     }

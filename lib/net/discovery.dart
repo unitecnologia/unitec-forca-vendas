@@ -10,16 +10,21 @@ import '../api/api_client.dart';
 class ServerDiscovery {
   static const int defaultPort = 8765;
 
+  /// Portas testadas na varredura: 8765 (instalação/produção) e 8000 (dev).
+  static const List<int> defaultPorts = [8765, 8000];
+
   static Future<String?> find({
-    int port = defaultPort,
+    List<int> ports = defaultPorts,
     void Function(int done, int total)? onProgress,
   }) async {
     final prefixes = await _localPrefixes();
     if (prefixes.isEmpty) return null;
 
     for (final prefix in prefixes) {
-      final found = await _scanSubnet(prefix, port, onProgress);
-      if (found != null) return found;
+      for (final port in ports) {
+        final found = await _scanSubnet(prefix, port, onProgress);
+        if (found != null) return found;
+      }
     }
     return null;
   }
