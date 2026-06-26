@@ -1,0 +1,33 @@
+workflows:
+  forca-vendas-android:
+    name: Forca de Vendas - Android APK
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      java: 17
+    triggering:
+      events:
+        - push
+    scripts:
+      - name: Gerar projeto Android (android/ nao e versionado)
+        script: |
+          set -e
+          flutter create --org com.unitec --project-name unitec_forca_vendas --platforms=android .
+      - name: Aplicar AndroidManifest (permissoes + HTTP cleartext)
+        script: |
+          set -e
+          cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+      - name: Instalar dependencias
+        script: flutter pub get
+      - name: Build APK release
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+    publishing:
+      email:
+        recipients:
+          - TROQUE_PELO_SEU_EMAIL@exemplo.com
+        notify:
+          success: true
+          failure: true
