@@ -6,6 +6,14 @@ workflows:
     environment:
       flutter: stable
       java: 17
+      groups:
+        # Grupo com as credenciais da keystore (cadastre no Codemagic):
+        #   CM_KEYSTORE          -> conteudo da keystore em base64
+        #   CM_KEYSTORE_PASSWORD -> senha do store
+        #   CM_KEY_ALIAS         -> alias da chave
+        #   CM_KEY_PASSWORD      -> senha da chave
+        # Enquanto o grupo nao existir/estiver vazio, o build usa a chave debug.
+        - keystore_credentials
     triggering:
       events:
         - push
@@ -18,6 +26,24 @@ workflows:
         script: |
           set -e
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+      - name: Configurar assinatura de release (se a keystore estiver definida)
+        script: |
+          set -e
+          if [ -n "$CM_KEYSTORE" ]; then
+            echo "Keystore encontrada: configurando signing de release."
+            echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/release.keystore"
+            cat > android/key.properties <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_BUILD_DIR/release.keystore
+          EOF
+            cp ci/build.gradle.kts android/app/build.gradle.kts
+            rm -f android/app/build.gradle
+          else
+            echo "AVISO: CM_KEYSTORE nao definido. O APK sera assinado com a chave DEBUG"
+            echo "       e NAO podera ser instalado por cima de uma build de release."
+          fi
       - name: Instalar dependencias
         script: flutter pub get
       - name: Build APK release
