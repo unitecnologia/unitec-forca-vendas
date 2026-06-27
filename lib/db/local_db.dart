@@ -19,7 +19,12 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(_createOutboxCustomersSql);
+        }
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE products (
@@ -75,9 +80,21 @@ class LocalDb {
           )''');
         await db.execute('''
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
+        await db.execute(_createOutboxCustomersSql);
       },
     );
   }
+
+  static const String _createOutboxCustomersSql = '''
+          CREATE TABLE IF NOT EXISTS outbox_customers (
+            uuid TEXT PRIMARY KEY,
+            local_id INTEGER,
+            payload_json TEXT,
+            created_at TEXT,
+            status TEXT,        -- pendente | enviado | erro
+            erro TEXT,
+            server_id INTEGER
+          )''';
 
   // ---- Catálogo (pull, upsert) -------------------------------------------
 
@@ -146,5 +163,40 @@ class LocalDb {
     final r = await database
         .rawQuery("SELECT COUNT(*) c FROM outbox_orders WHERE status = 'pendente'");
     return (r.first['c'] as int?) ?? 0;
+  }
+
+  // ---- Clientes (cadastro local + fila p/ ERP) ---------------------------
+
+  /// Gera um id local negativo (não colide com ids do ERP, que são positivos).
+  int newLocalId() => -DateTime.now().millisecondsSinceEpoch;
+
+  /// Insere/atualiza um cliente na base local (visível na lista e nos pedidos).
+  Future<void> upsertCustomer(Map<String, dynamic> row) async {
+    final database = await db;
+    await database.insert('customers', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Enfileira um cliente novo para envio ao ERP na próxima sincronização.
+  Future<void> insertOutboxCustomer(Map<String, dynamic> row) async {
+    final database = await db;
+    await database.insert('outbox_customers', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> pendingCustomers() async {
+    final database = await db;
+    return database.query('outbox_customers',
+        where: 'status = ?', whereArgs: ['pendente'], orderBy: 'created_at');
+  }
+
+  Future<void> markCustomer(String uuid, String status, {String? erro, int? serverId}) async {
+    final database = await db;
+    await database.update(
+      'outbox_customers',
+      {'status': status, 'erro': erro, 'server_id': serverId},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
   }
 }

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import 'novo_cliente_screen.dart';
+import 'novo_pedido_screen.dart';
 
 class ClientesScreen extends StatefulWidget {
   const ClientesScreen({super.key});
@@ -43,6 +45,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(title: const Text('Clientes'), backgroundColor: Brand.blue, foregroundColor: Colors.white),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _novoCliente,
+        backgroundColor: Brand.green,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.person_add_alt_1),
+        label: const Text('Novo cliente'),
+      ),
       body: Column(
         children: [
           Padding(
@@ -86,7 +95,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       title: Text((c['nome_razao'] ?? '').toString(),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text(cidade.isEmpty ? 'Cód. ${c['codigo'] ?? ''}' : cidade),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Fazer pedido',
+                            icon: const Icon(Icons.add_shopping_cart, color: Brand.green),
+                            onPressed: () => _fazerPedido(c),
+                          ),
+                          const Icon(Icons.chevron_right, color: Colors.black38),
+                        ],
+                      ),
                       onTap: () => _detalhe(c),
                     ),
                   );
@@ -98,6 +117,25 @@ class _ClientesScreenState extends State<ClientesScreen> {
     );
   }
 
+  Future<void> _novoCliente() async {
+    final criado = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const NovoClienteScreen()),
+    );
+    if (criado == true) {
+      _termo = '';
+      await _buscar();
+    }
+  }
+
+  Future<void> _fazerPedido(Map<String, dynamic> c) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => NovoPedidoScreen(clienteInicial: c)),
+    );
+    if (mounted) await _buscar();
+  }
+
   void _detalhe(Map<String, dynamic> c) {
     showModalBottomSheet(
       context: context,
@@ -105,7 +143,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) {
+      builder: (sheetCtx) {
         final endereco = [
           c['endereco'],
           c['numero'],
@@ -134,6 +172,22 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         : [(c['celular1'] ?? ''), (c['fone1'] ?? '')].where((e) => e.toString().isNotEmpty).join(' / ')),
                 _linha(Icons.email_outlined, 'E-mail', (c['email'] ?? '—').toString()),
                 _linha(Icons.credit_score_outlined, 'Limite de crédito', brMoney(c['limite_credito'] as num?)),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetCtx);
+                      _fazerPedido(c);
+                    },
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text('Fazer pedido'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Brand.green,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

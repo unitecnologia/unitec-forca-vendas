@@ -140,9 +140,9 @@ class _HomeScreenState extends State<HomeScreen> {
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.45,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: 1.7,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => _MenuCard(item: itens[i]),
@@ -289,37 +289,37 @@ class _MenuCard extends StatelessWidget {
     final opacity = item.emDesenvolvimento ? 0.55 : 1.0;
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       elevation: 1.5,
       shadowColor: Colors.black26,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: item.onTap,
         child: Opacity(
           opacity: opacity,
           child: Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(11),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      width: 46,
-                      height: 46,
+                      width: 38,
+                      height: 38,
                       decoration: BoxDecoration(
                         color: item.color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(11),
                       ),
-                      child: Icon(item.icon, color: item.color, size: 26),
+                      child: Icon(item.icon, color: item.color, size: 21),
                     ),
                     Text(
                       item.label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 14.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF263238),
                       ),
@@ -329,21 +329,21 @@ class _MenuCard extends StatelessWidget {
               ),
               if (item.novo)
                 Positioned(
-                  top: 10,
-                  right: 10,
+                  top: 8,
+                  right: 8,
                   child: _Tag(text: 'Novo', color: Brand.green),
                 ),
               if (item.badge != null)
                 Positioned(
-                  top: 10,
-                  right: 10,
+                  top: 8,
+                  right: 8,
                   child: _Tag(text: item.badge!, color: Colors.redAccent),
                 ),
               if (item.emDesenvolvimento)
                 const Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Icon(Icons.construction_outlined, size: 18, color: Colors.orange),
+                  top: 8,
+                  right: 8,
+                  child: Icon(Icons.construction_outlined, size: 16, color: Colors.orange),
                 ),
             ],
           ),

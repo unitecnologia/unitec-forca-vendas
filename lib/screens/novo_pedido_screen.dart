@@ -27,7 +27,10 @@ class _ItemPedido {
 }
 
 class NovoPedidoScreen extends StatefulWidget {
-  const NovoPedidoScreen({super.key});
+  const NovoPedidoScreen({super.key, this.clienteInicial});
+
+  /// Cliente pré-selecionado (ex.: ao iniciar o pedido pela tela de Clientes).
+  final Map<String, dynamic>? clienteInicial;
 
   @override
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
@@ -39,6 +42,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
   final List<_ItemPedido> _itens = [];
   final _obs = TextEditingController();
   bool _salvando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cliente = widget.clienteInicial;
+  }
 
   double get _total => _itens.fold(0.0, (s, i) => s + i.total);
 
