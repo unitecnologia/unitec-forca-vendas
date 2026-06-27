@@ -160,12 +160,19 @@ class SyncService extends ChangeNotifier {
 
     final orders = pending.map((o) {
       final itens = (o['itens_json'] as String?) ?? '[]';
+      final extra = _parseMap((o['extra_json'] as String?) ?? '');
       return <String, dynamic>{
         'uuid': o['uuid'],
         'tipo': o['tipo'] ?? 'orcamento',
         'cliente_id': o['cliente_id'],
         'observacoes': o['observacoes'],
         'desconto_valor': o['desconto_valor'] ?? 0,
+        'percentual_desconto': extra['percentual_desconto'] ?? 0,
+        'forma_pagamento': extra['forma_pagamento'],
+        'condicao_pagamento': extra['condicao_pagamento'],
+        'price_table_id': extra['price_table_id'],
+        'lista_preco_nome': extra['lista_preco_nome'],
+        'frete': extra['frete'] ?? 0,
         'latitude': o['latitude'],
         'longitude': o['longitude'],
         'created_at': o['created_at'],
@@ -205,6 +212,16 @@ class SyncService extends ChangeNotifier {
       return decoded is List ? decoded : [];
     } catch (_) {
       return [];
+    }
+  }
+
+  static Map<String, dynamic> _parseMap(String json) {
+    try {
+      if (json.trim().isEmpty) return {};
+      final decoded = jsonDecode(json);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : {};
+    } catch (_) {
+      return {};
     }
   }
 

@@ -19,10 +19,13 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
+        }
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE outbox_orders ADD COLUMN extra_json TEXT');
         }
       },
       onCreate: (db, _) async {
@@ -74,9 +77,10 @@ class LocalDb {
             latitude REAL, longitude REAL,
             itens_json TEXT,
             created_at TEXT,
-            status TEXT,        -- pendente | enviado | erro
+            status TEXT,        -- pendente | enviado | erro | rascunho
             erro TEXT,
-            numero TEXT
+            numero TEXT,
+            extra_json TEXT     -- campos comerciais (forma, condicao, frete, lista, pct)
           )''');
         await db.execute('''
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
