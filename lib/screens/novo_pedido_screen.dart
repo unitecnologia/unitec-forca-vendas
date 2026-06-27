@@ -433,6 +433,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
               _tabelaDias = _tabelaById(id)?['dias']?.toString();
             }),
           ),
+          _vencimentosPreview(),
         ],
         _label('Data de Emissão'),
         _readonlyBox(_dataHoraAgora()),
@@ -595,6 +596,69 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
     final n = DateTime.now();
     String d(int v) => v.toString().padLeft(2, '0');
     return '${d(n.day)}/${d(n.month)}/${n.year} ${d(n.hour)}:${d(n.minute)}';
+  }
+
+  String _fmtData(DateTime d) {
+    String p(int v) => v.toString().padLeft(2, '0');
+    return '${p(d.day)}/${p(d.month)}/${d.year}';
+  }
+
+  /// Prévia dos vencimentos a partir da tabela de prazo selecionada
+  /// (hoje + cada dia), exibidos de 2 em 2: "1ª — 27/08/2026   2ª — ...".
+  Widget _vencimentosPreview() {
+    final dias = (_tabelaDias ?? '')
+        .split(',')
+        .map((d) => int.tryParse(d.trim()))
+        .whereType<int>()
+        .toList();
+    if (dias.isEmpty) return const SizedBox.shrink();
+
+    final hoje = DateTime.now();
+    final itens = <Widget>[];
+    for (var i = 0; i < dias.length; i++) {
+      final venc = hoje.add(Duration(days: dias[i]));
+      itens.add(Text('${i + 1}ª — ${_fmtData(venc)}',
+          style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF37474F))));
+    }
+
+    final linhas = <Widget>[];
+    for (var i = 0; i < itens.length; i += 2) {
+      linhas.add(Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          children: [
+            Expanded(child: itens[i]),
+            Expanded(child: i + 1 < itens.length ? itens[i + 1] : const SizedBox()),
+          ],
+        ),
+      ));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F6FB),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFCBD5E1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 6),
+              child: Text('Vencimentos',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Brand.blue)),
+            ),
+            ...linhas,
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _label(String t) => Padding(
