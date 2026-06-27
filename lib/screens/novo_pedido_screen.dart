@@ -30,20 +30,15 @@ class _ItemPedido {
   double get total => bruto - desconto;
 }
 
-const List<String> _formasPagamento = [
-  'Dinheiro',
-  'Pix',
-  'Boleto',
-  'Cartão',
-  'Crediário',
-  'A prazo',
-];
-
 class NovoPedidoScreen extends StatefulWidget {
-  const NovoPedidoScreen({super.key, this.clienteInicial});
+  const NovoPedidoScreen({super.key, this.clienteInicial, this.tipoInicial = 'pedido'});
 
   /// Cliente pré-selecionado (ex.: ao iniciar o pedido pela tela de Clientes).
   final Map<String, dynamic>? clienteInicial;
+
+  /// Tipo do documento: 'pedido' (vai para o Monitor de Vendas e baixa estoque
+  /// ao faturar) ou 'orcamento' (vai para Orçamentos recebidos, sem baixa).
+  final String tipoInicial;
 
   @override
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
@@ -60,8 +55,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
   final _descPct = TextEditingController(text: '0,00');
   final _descValor = TextEditingController(text: '0,00');
 
-  String _tipo = 'pedido';
-  String _forma = 'Boleto';
+  late String _tipo = widget.tipoInicial;
+
+  // Forma de pagamento e prazo vêm sincronizados do ERP (flag "Disponível Mobile").
+  List<Map<String, dynamic>> _formas = [];
+  int? _formaId;
+  String _forma = '';
+  List<Map<String, dynamic>> _tabelas = [];
+  int? _tabelaPrazoId;
+  String? _tabelaDias;
+
   Map<String, dynamic>? _listaPreco;
   List<Map<String, dynamic>> _listasPreco = [];
   bool _enviarNaSync = true;
@@ -72,7 +75,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
   void initState() {
     super.initState();
     _cliente = widget.clienteInicial;
-    _carregarListasPreco();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _carregarListasPreco();
+    await _carregarFormas();
   }
 
   @override
@@ -88,6 +96,68 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
   Future<void> _carregarListasPreco() async {
     final rows = await _db.query('SELECT * FROM price_tables WHERE ativo = 1 ORDER BY descricao');
     if (mounted) setState(() => _listasPreco = rows);
+  }
+
+  Future<void> _carregarFormas() async {
+    final rows = await _db.query('SELECT * FROM formas_pagamento ORDER BY codigo');
+    if (!mounted) return;
+    setState(() {
+      _formas = rows;
+      // Pré-seleciona a forma/prazo amarrados ao cliente; senão, a primeira forma.
+      if (!_preselecionarDoCliente() && _formaId == null && rows.isNotEmpty) {
+        _aplicarForma(rows.first['id'] as int?);
+      }
+    });
+  }
+
+  Map<String, dynamic>? _formaById(int? id) {
+    for (final f in _formas) {
+      if (f['id'] == id) return f;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _tabelaById(int? id) {
+    for (final t in _tabelas) {
+      if (t['id'] == id) return t;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _parseTabelas(dynamic json) {
+    try {
+      final decoded = jsonDecode((json ?? '[]').toString());
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Define a forma selecionada e recarrega as tabelas de prazo dela.
+  void _aplicarForma(int? id) {
+    final f = _formaById(id);
+    _formaId = id;
+    _forma = (f?['descricao'] ?? '').toString();
+    _tabelas = _parseTabelas(f?['tabelas_json']);
+    if (_tabelaById(_tabelaPrazoId) == null) {
+      _tabelaPrazoId = null;
+      _tabelaDias = null;
+    }
+  }
+
+  /// Aplica a forma/prazo pré-fixados no cadastro do cliente. Retorna true
+  /// quando conseguiu pré-selecionar a forma.
+  bool _preselecionarDoCliente() {
+    final fid = _cliente?['forma_pagamento_id'] as int?;
+    if (fid == null || _formaById(fid) == null) return false;
+    _aplicarForma(fid);
+    final tid = _cliente?['tabela_prazo_id'] as int?;
+    if (tid != null && _tabelaById(tid) != null) {
+      _tabelaPrazoId = tid;
+      _tabelaDias = (_cliente?['tabela_prazo_dias'] ?? _tabelaById(tid)?['dias'])?.toString();
+    }
+    return true;
   }
 
   // ---- Cálculos ----------------------------------------------------------
@@ -130,7 +200,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
       isScrollControlled: true,
       builder: (_) => const _BuscaSheet(tabela: 'customers', titulo: 'Selecionar cliente', campoNome: 'nome_razao'),
     );
-    if (escolhido != null) setState(() => _cliente = escolhido);
+    if (escolhido != null) {
+      setState(() {
+        _cliente = escolhido;
+        _preselecionarDoCliente();
+      });
+    }
   }
 
   Future<void> _adicionarItem() async {
@@ -192,6 +267,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
     final extra = <String, dynamic>{
       'percentual_desconto': _parseNum(_descPct.text),
       'forma_pagamento': _forma,
+      'forma_pagamento_id': _formaId,
+      'tabela_prazo_id': _tabelaPrazoId,
+      'tabela_prazo_dias': _tabelaDias,
       'condicao_pagamento': _condicao.text.trim(),
       'price_table_id': _listaPreco?['id'],
       'lista_preco_nome': _listaPreco?['descricao'],
@@ -240,7 +318,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
       child: Scaffold(
         backgroundColor: Brand.bg,
         appBar: AppBar(
-          title: const Text('Cadastro de Pedido'),
+          title: Text(_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
           backgroundColor: Brand.blue,
           foregroundColor: Colors.white,
           bottom: const TabBar(
@@ -333,11 +411,29 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
         _label('Condição de Pagamento'),
         _campoTexto(_condicao, hint: 'Ex.: 30/60'),
         _label('Forma de Pagamento *'),
-        _dropdown<String>(
-          value: _forma,
-          items: {for (final f in _formasPagamento) f: f},
-          onChanged: (v) => setState(() => _forma = v ?? 'Boleto'),
+        _dropdown<int?>(
+          value: _formaId,
+          items: {
+            for (final f in _formas)
+              (f['id'] as int): '${f['codigo'] ?? ''} - ${f['descricao'] ?? ''}'.trim()
+          },
+          hint: _formas.isEmpty ? 'Sincronize para carregar' : 'Selecione',
+          onChanged: (id) => setState(() => _aplicarForma(id)),
         ),
+        if (_tabelas.isNotEmpty) ...[
+          _label('Prazo / Parcelamento'),
+          _dropdown<int?>(
+            value: _tabelaPrazoId,
+            items: {
+              for (final t in _tabelas) (t['id'] as int): '${t['dias'] ?? ''} dias'.trim()
+            },
+            hint: 'À vista',
+            onChanged: (id) => setState(() {
+              _tabelaPrazoId = id;
+              _tabelaDias = _tabelaById(id)?['dias']?.toString();
+            }),
+          ),
+        ],
         _label('Data de Emissão'),
         _readonlyBox(_dataHoraAgora()),
         _label('Endereço de entrega'),

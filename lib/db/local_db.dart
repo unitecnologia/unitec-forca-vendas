@@ -19,13 +19,19 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
         }
         if (oldVersion < 3) {
           await db.execute('ALTER TABLE outbox_orders ADD COLUMN extra_json TEXT');
+        }
+        if (oldVersion < 4) {
+          await db.execute(_createFormasPagamentoSql);
+          await db.execute('ALTER TABLE customers ADD COLUMN forma_pagamento_id INTEGER');
+          await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_id INTEGER');
+          await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_dias TEXT');
         }
       },
       onCreate: (db, _) async {
@@ -44,7 +50,9 @@ class LocalDb {
             codigo TEXT, nome_razao TEXT, apelido_fantasia TEXT, cpf_cnpj TEXT,
             endereco TEXT, numero TEXT, bairro TEXT, cidade_nome TEXT, uf TEXT, cep TEXT,
             email TEXT, fone1 TEXT, celular1 TEXT, whatsapp TEXT,
-            limite_credito REAL, dia_pgto INTEGER, ativo INTEGER, updated_at TEXT
+            limite_credito REAL, dia_pgto INTEGER,
+            forma_pagamento_id INTEGER, tabela_prazo_id INTEGER, tabela_prazo_dias TEXT,
+            ativo INTEGER, updated_at TEXT
           )''');
         await db.execute('''
           CREATE TABLE price_tables (
@@ -85,9 +93,18 @@ class LocalDb {
         await db.execute('''
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
         await db.execute(_createOutboxCustomersSql);
+        await db.execute(_createFormasPagamentoSql);
       },
     );
   }
+
+  static const String _createFormasPagamentoSql = '''
+          CREATE TABLE IF NOT EXISTS formas_pagamento (
+            id INTEGER PRIMARY KEY,
+            codigo INTEGER, descricao TEXT, tipo TEXT,
+            nfce INTEGER, max_parcelas INTEGER,
+            tabelas_json TEXT   -- [{id, dias, ordem}, ...]
+          )''';
 
   static const String _createOutboxCustomersSql = '''
           CREATE TABLE IF NOT EXISTS outbox_customers (
@@ -116,6 +133,11 @@ class LocalDb {
   Future<List<Map<String, dynamic>>> query(String sql, [List<Object?>? args]) async {
     final database = await db;
     return database.rawQuery(sql, args);
+  }
+
+  Future<void> deleteAll(String table) async {
+    final database = await db;
+    await database.delete(table);
   }
 
   Future<int> count(String table) async {

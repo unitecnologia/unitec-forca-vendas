@@ -124,9 +124,27 @@ class SyncService extends ChangeNotifier {
           'whatsapp': r['whatsapp'],
           'limite_credito': _d(r['limite_credito']),
           'dia_pgto': r['dia_pgto'],
+          'forma_pagamento_id': r['forma_pagamento_id'],
+          'tabela_prazo_id': r['tabela_prazo_id'],
+          'tabela_prazo_dias': r['tabela_prazo_dias'],
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
         });
+
+    // Formas de pagamento liberadas para o app: substitui a lista inteira para
+    // refletir formas que deixaram de estar "Disponível Mobile".
+    if (data['formas_pagamento'] != null) {
+      await _db.deleteAll('formas_pagamento');
+      await _db.upsertAll('formas_pagamento', data['formas_pagamento'] ?? [], (r) => {
+            'id': r['id'],
+            'codigo': r['codigo'],
+            'descricao': r['descricao'],
+            'tipo': r['tipo'],
+            'nfce': _b(r['nfce']),
+            'max_parcelas': r['max_parcelas'],
+            'tabelas_json': jsonEncode(r['tabelas_prazo'] ?? []),
+          });
+    }
 
     await _db.upsertAll('price_tables', data['price_tables'] ?? [], (r) => {
           'id': r['id'], 'codigo': r['codigo'], 'descricao': r['descricao'],
@@ -169,6 +187,9 @@ class SyncService extends ChangeNotifier {
         'desconto_valor': o['desconto_valor'] ?? 0,
         'percentual_desconto': extra['percentual_desconto'] ?? 0,
         'forma_pagamento': extra['forma_pagamento'],
+        'forma_pagamento_id': extra['forma_pagamento_id'],
+        'tabela_prazo_id': extra['tabela_prazo_id'],
+        'tabela_prazo_dias': extra['tabela_prazo_dias'],
         'condicao_pagamento': extra['condicao_pagamento'],
         'price_table_id': extra['price_table_id'],
         'lista_preco_nome': extra['lista_preco_nome'],
