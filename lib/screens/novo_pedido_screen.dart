@@ -44,8 +44,11 @@ class NovoPedidoScreen extends StatefulWidget {
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
 }
 
-class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
+class _NovoPedidoScreenState extends State<NovoPedidoScreen>
+    with SingleTickerProviderStateMixin {
   final _db = LocalDb.instance;
+
+  late final TabController _tabController;
 
   Map<String, dynamic>? _cliente;
   final List<_ItemPedido> _itens = [];
@@ -74,6 +77,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    // Atualiza a tela ao trocar de aba para mostrar a barra só no Resumo.
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
     _cliente = widget.clienteInicial;
     _init();
   }
@@ -85,6 +93,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _obs.dispose();
     _condicao.dispose();
     _frete.dispose();
@@ -313,34 +322,34 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        backgroundColor: Brand.bg,
-        appBar: AppBar(
-          title: Text(_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
-          backgroundColor: Brand.blue,
-          foregroundColor: Colors.white,
-          bottom: const TabBar(
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            tabs: [
-              Tab(icon: Icon(Icons.assignment_outlined), text: 'Dados'),
-              Tab(icon: Icon(Icons.list_alt_outlined), text: 'Itens'),
-              Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Resumo'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _abaDados(),
-            _abaItens(),
-            _abaResumo(),
+    return Scaffold(
+      backgroundColor: Brand.bg,
+      appBar: AppBar(
+        title: Text(_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
+        backgroundColor: Brand.blue,
+        foregroundColor: Colors.white,
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(icon: Icon(Icons.assignment_outlined), text: 'Dados'),
+            Tab(icon: Icon(Icons.list_alt_outlined), text: 'Itens'),
+            Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Resumo'),
           ],
         ),
-        bottomNavigationBar: _barraAcoes(),
       ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _abaDados(),
+          _abaItens(),
+          _abaResumo(),
+        ],
+      ),
+      // Barra com Total + Salvar/Cancelar aparece apenas na aba Resumo.
+      bottomNavigationBar: _tabController.index == 2 ? _barraAcoes() : null,
     );
   }
 
@@ -545,7 +554,86 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen> {
         _resumoRow('Frete', brMoney(_freteValor)),
         const Divider(),
         _resumoRow('Valor total do pedido', brMoney(_total), destaque: true),
+        const SizedBox(height: 16),
+        _tituloSecao('Parcelas'),
+        _parcelasResumo(),
       ],
+    );
+  }
+
+  /// Prévia detalhada das parcelas: nº, vencimento, forma de pagamento e valor.
+  /// Quando não há prazo (à vista), mostra uma única parcela com vencimento hoje.
+  Widget _parcelasResumo() {
+    final dias = (_tabelaDias ?? '')
+        .split(',')
+        .map((d) => int.tryParse(d.trim()))
+        .whereType<int>()
+        .toList();
+    final base = dias.isEmpty ? <int>[0] : dias;
+    final n = base.length;
+    final total = _total;
+    final forma = _forma.trim().isEmpty ? '—' : _forma.trim();
+    final hoje = DateTime.now();
+
+    // Divide o total em centavos para evitar diferença de arredondamento;
+    // a última parcela recebe o eventual resto.
+    final parcelaBase = (total / n * 100).floorToDouble() / 100;
+
+    final linhas = <Widget>[];
+    for (var i = 0; i < n; i++) {
+      final valor = i == n - 1
+          ? double.parse((total - parcelaBase * (n - 1)).toStringAsFixed(2))
+          : parcelaBase;
+      final venc = hoje.add(Duration(days: base[i]));
+      linhas.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${i + 1}ª — ${_fmtData(venc)}',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF37474F))),
+                  Text(forma,
+                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                ],
+              ),
+            ),
+            Text(brMoney(valor),
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800, color: Brand.green)),
+          ],
+        ),
+      ));
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F6FB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text('$n parcela${n > 1 ? 's' : ''}',
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w700, color: Brand.blue)),
+          ),
+          ...linhas,
+        ],
+      ),
     );
   }
 

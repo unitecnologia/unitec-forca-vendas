@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'app_state.dart';
@@ -9,23 +10,59 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/waiting_approval_screen.dart';
 
+/// Esconde a barra de navegação do Android (botões voltar/home/recentes),
+/// mantendo apenas a barra de status (relógio/bateria) no topo.
+Future<void> _aplicarModoTela() async {
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: [SystemUiOverlay.top],
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _aplicarModoTela();
   await AppLog.instance.load();
   AppLog.instance.info('app', 'Aplicativo iniciado');
   final config = await AppConfig.load();
   runApp(UnitecForcaVendasApp(state: AppState(config)));
 }
 
-class UnitecForcaVendasApp extends StatelessWidget {
+class UnitecForcaVendasApp extends StatefulWidget {
   const UnitecForcaVendasApp({super.key, required this.state});
 
   final AppState state;
 
   @override
+  State<UnitecForcaVendasApp> createState() => _UnitecForcaVendasAppState();
+}
+
+class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Reaplica ao voltar ao foco (ex.: depois de fechar o teclado).
+    if (state == AppLifecycleState.resumed) {
+      _aplicarModoTela();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
-      value: state,
+      value: widget.state,
       child: MaterialApp(
         title: 'Unitec Força de Vendas',
         debugShowCheckedModeBanner: false,
