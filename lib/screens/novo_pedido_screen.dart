@@ -328,16 +328,39 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         title: Text(_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(icon: Icon(Icons.assignment_outlined), text: 'Dados'),
-            Tab(icon: Icon(Icons.list_alt_outlined), text: 'Itens'),
-            Tab(icon: Icon(Icons.receipt_long_outlined), text: 'Resumo'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(50),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 7),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: const Color(0x26FFFFFF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                splashBorderRadius: BorderRadius.circular(9),
+                indicator: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1))],
+                ),
+                labelColor: Brand.blue,
+                unselectedLabelColor: Colors.white,
+                labelPadding: EdgeInsets.zero,
+                labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                unselectedLabelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                tabs: const [
+                  Tab(height: 38, child: _TabContent(icon: Icons.assignment_outlined, text: 'Dados')),
+                  Tab(height: 38, child: _TabContent(icon: Icons.list_alt_outlined, text: 'Itens')),
+                  Tab(height: 38, child: _TabContent(icon: Icons.receipt_long_outlined, text: 'Resumo')),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
       body: TabBarView(
@@ -364,95 +387,90 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final empresa = context.read<AppState>().config.empresaNome;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
       children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          value: _enviarNaSync,
-          onChanged: (v) => setState(() => _enviarNaSync = v),
-          activeColor: Brand.green,
-          title: const Text('Enviar pedido na próxima sincronização',
-              style: TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: const Text('Desmarque para salvar como rascunho (não envia).'),
-        ),
-        _label('Número do Pedido'),
-        _readonlyBox('(gerado no ERP ao sincronizar)'),
-        _label('Tipo de Pedido *'),
-        _dropdown<String>(
-          value: _tipo,
-          items: const {'pedido': '1 - Pedido', 'orcamento': '2 - Orçamento'},
-          onChanged: (v) => setState(() => _tipo = v ?? 'pedido'),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _label('Cliente *'),
-            if (limite != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Text('Limite de crédito: ${brMoney(limite)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
-              ),
-          ],
-        ),
-        _selectorBox(
-          texto: _cliente == null ? 'Selecionar cliente' : (_cliente!['nome_razao'] ?? '').toString(),
-          icon: Icons.person_search_outlined,
-          onTap: _selecionarCliente,
-          destaque: _cliente != null,
-        ),
-        _label('Filial / Unidade'),
-        _readonlyBox(empresa.isEmpty ? 'Empresa padrão' : empresa),
-        _label('Lista de Preço'),
-        _dropdown<int?>(
-          value: _listaPreco?['id'] as int?,
-          items: {
-            for (final l in _listasPreco)
-              (l['id'] as int): '${l['codigo'] ?? ''} - ${l['descricao'] ?? ''}'.trim()
-          },
-          hint: 'Padrão',
-          onChanged: (id) => setState(() =>
-              _listaPreco = _listasPreco.cast<Map<String, dynamic>?>().firstWhere(
-                    (l) => l?['id'] == id,
-                    orElse: () => null,
-                  )),
-        ),
-        _label('Condição de Pagamento'),
-        _campoTexto(_condicao, hint: 'Ex.: 30/60'),
-        _label('Forma de Pagamento *'),
-        _dropdown<int?>(
-          value: _formaId,
-          items: {
-            for (final f in _formas)
-              (f['id'] as int): '${f['codigo'] ?? ''} - ${f['descricao'] ?? ''}'.trim()
-          },
-          hint: _formas.isEmpty ? 'Sincronize para carregar' : 'Selecione',
-          onChanged: (id) => setState(() => _aplicarForma(id)),
-        ),
-        if (_tabelas.isNotEmpty) ...[
-          _label('Prazo / Parcelamento'),
-          _dropdown<int?>(
-            value: _tabelaPrazoId,
-            items: {
-              for (final t in _tabelas) (t['id'] as int): '${t['dias'] ?? ''} dias'.trim()
-            },
-            hint: 'À vista',
-            onChanged: (id) => setState(() {
-              _tabelaPrazoId = id;
-              _tabelaDias = _tabelaById(id)?['dias']?.toString();
-            }),
+        _envioCard(),
+        _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
+          _infoTile(
+            icon: Icons.tag,
+            label: 'Número do Pedido',
+            value: 'Gerado no ERP ao sincronizar',
+            muted: true,
           ),
+          _field('Tipo de Pedido *', _dropdown<String>(
+            value: _tipo,
+            items: const {'pedido': '1 - Pedido', 'orcamento': '2 - Orçamento'},
+            onChanged: (v) => setState(() => _tipo = v ?? 'pedido'),
+          )),
+          _field('Lista de Preço', _dropdown<int?>(
+            value: _listaPreco?['id'] as int?,
+            items: {
+              for (final l in _listasPreco)
+                (l['id'] as int): '${l['codigo'] ?? ''} - ${l['descricao'] ?? ''}'.trim()
+            },
+            hint: 'Padrão',
+            onChanged: (id) => setState(() =>
+                _listaPreco = _listasPreco.cast<Map<String, dynamic>?>().firstWhere(
+                      (l) => l?['id'] == id,
+                      orElse: () => null,
+                    )),
+          )),
+          _infoTile(icon: Icons.event_outlined, label: 'Data de Emissão', value: _dataHoraAgora()),
+        ]),
+        _section(icon: Icons.person_outline, titulo: 'Cliente & Entrega', filhos: [
+          _field(
+            'Cliente *',
+            _selectorBox(
+              texto: _cliente == null ? 'Selecionar cliente' : (_cliente!['nome_razao'] ?? '').toString(),
+              icon: Icons.person_search_outlined,
+              onTap: _selecionarCliente,
+              destaque: _cliente != null,
+            ),
+            trailing: limite != null
+                ? Text('Limite: ${brMoney(limite)}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54))
+                : null,
+          ),
+          _infoTile(icon: Icons.store_outlined, label: 'Filial / Unidade', value: empresa.isEmpty ? 'Empresa padrão' : empresa),
+          _infoTile(
+            icon: Icons.local_shipping_outlined,
+            label: 'Endereço de entrega',
+            value: (endereco == null || endereco.isEmpty) ? 'Selecione o cliente' : endereco,
+            muted: endereco == null || endereco.isEmpty,
+          ),
+        ]),
+        _section(icon: Icons.payments_outlined, titulo: 'Pagamento', filhos: [
+          _field('Forma de Pagamento *', _dropdown<int?>(
+            value: _formaId,
+            items: {
+              for (final f in _formas)
+                (f['id'] as int): '${f['codigo'] ?? ''} - ${f['descricao'] ?? ''}'.trim()
+            },
+            hint: _formas.isEmpty ? 'Sincronize para carregar' : 'Selecione',
+            onChanged: (id) => setState(() => _aplicarForma(id)),
+          )),
+          _field('Prazo Avulso',
+              _campoTexto(_condicao, hint: 'Ex.: 30,60,90', onChanged: (_) => setState(() {}))),
+          if (_tabelas.isNotEmpty)
+            _field('Prazo / Parcelamento', _dropdown<int?>(
+              value: _tabelaPrazoId,
+              items: {
+                for (final t in _tabelas) (t['id'] as int): '${t['dias'] ?? ''} dias'.trim()
+              },
+              hint: 'À vista',
+              onChanged: (id) => setState(() {
+                _tabelaPrazoId = id;
+                _tabelaDias = _tabelaById(id)?['dias']?.toString();
+              }),
+            )),
           _vencimentosPreview(),
-        ],
-        _label('Data de Emissão'),
-        _readonlyBox(_dataHoraAgora()),
-        _label('Endereço de entrega'),
-        _readonlyBox((endereco == null || endereco.isEmpty) ? 'Selecione o cliente' : endereco),
-        _label('Valor do Frete'),
-        _campoTexto(_frete,
-            teclado: const TextInputType.numberWithOptions(decimal: true),
-            prefix: 'R\$ ',
-            onChanged: (_) => setState(() {})),
+        ]),
+        _section(icon: Icons.attach_money, titulo: 'Valores', filhos: [
+          _field('Valor do Frete', _campoTexto(_frete,
+              teclado: const TextInputType.numberWithOptions(decimal: true),
+              prefix: 'R\$ ',
+              onChanged: (_) => setState(() {}))),
+        ]),
       ],
     );
   }
@@ -563,12 +581,24 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   /// Prévia detalhada das parcelas: nº, vencimento, forma de pagamento e valor.
   /// Quando não há prazo (à vista), mostra uma única parcela com vencimento hoje.
+  /// Converte uma string "30,60,90" em lista de dias [30, 60, 90].
+  List<int> _diasDe(String s) => s
+      .split(',')
+      .map((d) => int.tryParse(d.trim()))
+      .whereType<int>()
+      .toList();
+
+  /// Dias de prazo efetivos para gerar os vencimentos. O "Prazo Avulso"
+  /// (campo livre) tem prioridade sobre a tabela de prazo da forma de
+  /// pagamento; se estiver vazio, usa a tabela da forma.
+  List<int> _diasEfetivos() {
+    final avulso = _diasDe(_condicao.text);
+    if (avulso.isNotEmpty) return avulso;
+    return _diasDe(_tabelaDias ?? '');
+  }
+
   Widget _parcelasResumo() {
-    final dias = (_tabelaDias ?? '')
-        .split(',')
-        .map((d) => int.tryParse(d.trim()))
-        .whereType<int>()
-        .toList();
+    final dias = _diasEfetivos();
     final base = dias.isEmpty ? <int>[0] : dias;
     final n = base.length;
     final total = _total;
@@ -694,11 +724,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Prévia dos vencimentos a partir da tabela de prazo selecionada
   /// (hoje + cada dia), exibidos de 2 em 2: "1ª — 27/08/2026   2ª — ...".
   Widget _vencimentosPreview() {
-    final dias = (_tabelaDias ?? '')
-        .split(',')
-        .map((d) => int.tryParse(d.trim()))
-        .whereType<int>()
-        .toList();
+    final dias = _diasEfetivos();
     if (dias.isEmpty) return const SizedBox.shrink();
 
     final hoje = DateTime.now();
@@ -749,25 +775,151 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _label(String t) => Padding(
-        padding: const EdgeInsets.only(top: 14, bottom: 4),
-        child: Text(t, style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF37474F))),
+  // ---- Componentes do redesign (cards / campos / info tiles) -------------
+  Widget _section({required IconData icon, required String titulo, required List<Widget> filhos}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x0F1E293B), blurRadius: 10, offset: Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F0FB),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: Brand.blue),
+              ),
+              const SizedBox(width: 8),
+              Text(titulo,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Brand.blue)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...filhos,
+        ],
+      ),
+    );
+  }
+
+  Widget _fieldCaption(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Text(t.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF64748B))),
       );
+
+  Widget _field(String caption, Widget control, {Widget? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          trailing == null
+              ? _fieldCaption(caption)
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [_fieldCaption(caption), Padding(padding: const EdgeInsets.only(bottom: 5), child: trailing)],
+                ),
+          control,
+        ],
+      ),
+    );
+  }
+
+  Widget _infoTile({required IconData icon, required String label, required String value, bool muted = false}) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label.toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF94A3B8))),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: muted ? const Color(0xFF94A3B8) : const Color(0xFF1E293B))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _envioCard() {
+    final on = _enviarNaSync;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: on ? const Color(0xFFE9F7EC) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: on ? const Color(0xFFB7E1C0) : const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: on ? Brand.green : const Color(0xFFCBD5E1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(on ? Icons.cloud_upload_outlined : Icons.cloud_off_outlined, size: 18, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Enviar na próxima sincronização',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                Text(on ? 'Será enviado ao ERP.' : 'Salvar como rascunho (não envia).',
+                    style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+              ],
+            ),
+          ),
+          Switch(
+            value: on,
+            activeColor: Brand.green,
+            onChanged: (v) => setState(() => _enviarNaSync = v),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _tituloSecao(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(t,
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Brand.blue)),
-      );
-
-  Widget _readonlyBox(String texto) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEEF1F5),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(texto, style: const TextStyle(color: Colors.black87)),
       );
 
   Widget _selectorBox({
@@ -875,6 +1027,26 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                   color: destaque ? Brand.green : const Color(0xFF263238))),
         ],
       ),
+    );
+  }
+}
+
+/// Conteúdo compacto de cada aba (ícone + texto numa linha).
+class _TabContent extends StatelessWidget {
+  const _TabContent({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 6),
+        Text(text),
+      ],
     );
   }
 }

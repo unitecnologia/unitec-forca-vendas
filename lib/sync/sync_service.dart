@@ -81,6 +81,11 @@ class SyncService extends ChangeNotifier {
     final data = await api.pull(etag: etag);
     if (data == null) return; // 304 — nada mudou
 
+    // Pull completo (sem `since`): o servidor manda o conjunto inteiro de
+    // títulos em aberto, então substituímos a tabela para que os já quitados
+    // (que somem da lista) também sumam do app.
+    final fullPull = data['since'] == null;
+
     final prod = (data['products'] as List?)?.length ?? 0;
     final cli = (data['customers'] as List?)?.length ?? 0;
     AppLog.instance.info('sync', 'Catálogo atualizado (produtos: $prod, clientes: $cli)');
@@ -157,6 +162,9 @@ class SyncService extends ChangeNotifier {
     await _db.upsertAll('vendedores', data['vendedores'] ?? [], (r) => {
           'id': r['id'], 'codigo': r['codigo'], 'nome': r['nome'], 'ativo': _b(r['ativo']),
         });
+    if (fullPull) {
+      await _db.deleteAll('financeiro');
+    }
     await _db.upsertAll('financeiro', data['financeiro'] ?? [], (r) => {
           'id': r['id'], 'numero': r['numero'], 'documento': r['documento'],
           'cliente_id': r['cliente_id'], 'emissao': r['emissao'], 'vencimento': r['vencimento'],
