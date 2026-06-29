@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import 'pix_qr_screen.dart';
 
 class TitulosScreen extends StatefulWidget {
   const TitulosScreen({super.key});
@@ -290,9 +293,53 @@ class _TitulosScreenState extends State<TitulosScreen> {
                 fontWeight: FontWeight.w700,
                 color: vencido ? Colors.red : Brand.blue),
           ),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: 'Receber via Pix',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: const Icon(Icons.qr_code_2, color: Brand.green),
+            onPressed: () => _cobrarPixTitulo(t),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _cobrarPixTitulo(Map<String, dynamic> t) async {
+    final id = (t['id'] as num?)?.toInt();
+    if (id == null) return;
+
+    Map<String, dynamic> cobranca;
+    try {
+      cobranca = await context.read<AppState>().api.criarPix(
+            origem: 'titulo',
+            ref: id.toString(),
+          );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível gerar o Pix: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final pago = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => PixQrScreen(cobranca: cobranca)),
+    );
+
+    if (!mounted) return;
+    if (pago == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Título recebido via Pix!')),
+      );
+      // O título é baixado no ERP; sincroniza para sumir da lista.
+      await context.read<AppState>().sync.syncNow();
+      await _carregar();
+    }
   }
 }
 

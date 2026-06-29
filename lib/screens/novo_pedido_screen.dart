@@ -10,6 +10,7 @@ import '../db/local_db.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 import 'pedidos_screen.dart';
+import 'pix_qr_screen.dart';
 
 class _ItemPedido {
   _ItemPedido({
@@ -252,6 +253,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     }
   }
 
+  bool _isFormaPix() {
+    final f = _formaById(_formaId);
+    return (f?['tipo'] ?? '').toString() == 'pix';
+  }
+
   Future<void> _salvar() async {
     if (_cliente == null || _itens.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -259,10 +265,70 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       );
       return;
     }
+
+    // Pedido pago no Pix: gera a cobrança e só persiste após confirmar.
+    if (_tipo == 'pedido' && _isFormaPix()) {
+      await _fluxoPix();
+      return;
+    }
+
+    await _persistirPedido(uuid: const Uuid().v4());
+  }
+
+  /// Gera a cobrança Pix, abre o QR e — se pago — persiste/envia o pedido.
+  /// Se falhar/expirar, o pedido continua na tela para o vendedor decidir.
+  Future<void> _fluxoPix() async {
+    setState(() => _salvando = true);
+    final uuid = const Uuid().v4();
+
+    Map<String, dynamic> cobranca;
+    try {
+      cobranca = await context.read<AppState>().api.criarPix(
+            origem: 'pedido',
+            ref: uuid,
+            valor: _total,
+            payerEmail: (_cliente?['email'] ?? '').toString(),
+          );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _salvando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível gerar o Pix: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final pago = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => PixQrScreen(cobranca: cobranca)),
+    );
+
+    if (!mounted) return;
+    if (pago == true) {
+      await _persistirPedido(
+        uuid: uuid,
+        forcarEnvio: true,
+        pixExtra: {'pix_pago': true, 'pix_cobranca_id': cobranca['id']},
+      );
+    } else {
+      setState(() => _salvando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Pix não confirmado. Tente novamente ou troque a forma de pagamento.')),
+      );
+    }
+  }
+
+  Future<void> _persistirPedido({
+    required String uuid,
+    Map<String, dynamic>? pixExtra,
+    bool forcarEnvio = false,
+  }) async {
     setState(() => _salvando = true);
 
     final (lat, lng) = await _coletarGps();
-    final uuid = const Uuid().v4();
     final itensJson = jsonEncode(_itens
         .map((i) => {
               'product_id': i.productId,
@@ -283,7 +349,10 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'price_table_id': _listaPreco?['id'],
       'lista_preco_nome': _listaPreco?['descricao'],
       'frete': _freteValor,
+      if (pixExtra != null) ...pixExtra,
     };
+
+    final enviar = _enviarNaSync || forcarEnvio;
 
     await _db.insertOutbox({
       'uuid': uuid,
@@ -296,19 +365,19 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'longitude': lng,
       'itens_json': itensJson,
       'created_at': DateTime.now().toUtc().toIso8601String(),
-      'status': _enviarNaSync ? 'pendente' : 'rascunho',
+      'status': enviar ? 'pendente' : 'rascunho',
       'erro': null,
       'numero': null,
       'extra_json': jsonEncode(extra),
     });
 
     if (!mounted) return;
-    if (_enviarNaSync) {
+    if (enviar) {
       context.read<AppState>().sync.syncNow();
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_enviarNaSync
+      SnackBar(content: Text(enviar
           ? 'Pedido salvo. Será sincronizado automaticamente.'
           : 'Pedido salvo como rascunho (não será enviado).')),
     );
@@ -699,8 +768,10 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               onPressed: _salvando ? null : _salvar,
               icon: _salvando
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.save_outlined),
-              label: Text(_salvando ? 'Salvando...' : 'Salvar'),
+                  : Icon(_tipo == 'pedido' && _isFormaPix() ? Icons.qr_code_2 : Icons.save_outlined),
+              label: Text(_salvando
+                  ? 'Salvando...'
+                  : (_tipo == 'pedido' && _isFormaPix() ? 'Gerar Pix' : 'Salvar')),
               style: FilledButton.styleFrom(backgroundColor: Brand.green),
             ),
           ],

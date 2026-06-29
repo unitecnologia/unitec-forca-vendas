@@ -208,6 +208,44 @@ class ApiClient {
     return _decode(r);
   }
 
+  /// Cria uma cobrança Pix. origem: 'pedido' (ref = uuid, exige valor) ou
+  /// 'titulo' (ref = id da conta a receber).
+  Future<Map<String, dynamic>> criarPix({
+    required String origem,
+    required String ref,
+    double? valor,
+    String? payerEmail,
+  }) async {
+    final r = await _http
+        .post(
+          _uri('pix'),
+          headers: _headers(auth: true),
+          body: jsonEncode({
+            'origem': origem,
+            'ref': ref,
+            if (valor != null) 'valor': valor,
+            if (payerEmail != null && payerEmail.isNotEmpty) 'payer_email': payerEmail,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    return _decode(r);
+  }
+
+  /// Consulta o status de uma cobrança Pix (usado no polling).
+  Future<Map<String, dynamic>> pixStatus(int cobrancaId) async {
+    final r = await _http
+        .get(_uri('pix/$cobrancaId/status'), headers: _headers(auth: true))
+        .timeout(timeout);
+    return _decode(r);
+  }
+
+  Future<Map<String, dynamic>> cancelarPix(int cobrancaId) async {
+    final r = await _http
+        .post(_uri('pix/$cobrancaId/cancelar'), headers: _headers(auth: true))
+        .timeout(timeout);
+    return _decode(r);
+  }
+
   Map<String, dynamic> _decode(http.Response r) {
     if (r.statusCode >= 200 && r.statusCode < 300) {
       if (r.body.isEmpty) return {};
