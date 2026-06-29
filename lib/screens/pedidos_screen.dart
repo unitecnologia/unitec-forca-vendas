@@ -25,14 +25,62 @@ class _PedidosScreenState extends State<PedidosScreen> {
   }
 
   Future<void> _carregar() async {
-    final rows = await _db.query(
+    // Pedidos lançados neste aparelho (outbox).
+    final outbox = await _db.query(
       'SELECT o.uuid, o.numero, o.total, o.status, o.erro, o.created_at, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
       'ORDER BY o.created_at DESC LIMIT 300',
     );
+
+    // Histórico de vendas do vendedor logado (vindo do ERP). Sobrevive a
+    // reinstalação porque é baixado a cada sync completo.
+    final historico = await _db.query(
+      'SELECT h.numero, h.total, h.data, c.nome_razao '
+      'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
+      'ORDER BY h.data DESC LIMIT 500',
+    );
+
+    final numerosOutbox = <String>{
+      for (final o in outbox)
+        if ((o['numero'] ?? '').toString().isNotEmpty) (o['numero']).toString(),
+    };
+
+    final unified = <Map<String, dynamic>>[];
+    for (final o in outbox) {
+      unified.add({
+        'fonte': 'outbox',
+        'nome_razao': o['nome_razao'],
+        'numero': o['numero'],
+        'total': o['total'],
+        'status': o['status'],
+        'erro': o['erro'],
+        'created_at': o['created_at'],
+      });
+    }
+    for (final h in historico) {
+      final numero = (h['numero'] ?? '').toString();
+      // Evita duplicar uma venda que também está no outbox (já enviada).
+      if (numero.isNotEmpty && numerosOutbox.contains(numero)) continue;
+      unified.add({
+        'fonte': 'erp',
+        'nome_razao': h['nome_razao'],
+        'numero': h['numero'],
+        'total': h['total'],
+        'status': 'faturado',
+        'erro': '',
+        'created_at': h['data'],
+      });
+    }
+
+    unified.sort((a, b) {
+      final da = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime(1900);
+      final dbt = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime(1900);
+      return dbt.compareTo(da);
+    });
+
     if (mounted) {
       setState(() {
-        _rows = rows;
+        _rows = unified;
         _carregando = false;
       });
     }
@@ -62,7 +110,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
           : _rows.isEmpty
-              ? const Center(child: Text('Nenhum pedido lançado neste aparelho.'))
+              ? const Center(child: Text('Nenhum pedido neste aparelho nem venda no histórico.'))
               : RefreshIndicator(
                   onRefresh: _sincronizar,
                   child: ListView.separated(
@@ -87,6 +135,8 @@ class _PedidoCard extends StatelessWidget {
         return (Brand.green, 'Enviado', Icons.cloud_done_outlined);
       case 'erro':
         return (Colors.red, 'Erro', Icons.error_outline);
+      case 'faturado':
+        return (Brand.blue, 'ERP', Icons.receipt_long_outlined);
       default:
         return (Colors.orange, 'Pendente', Icons.cloud_upload_outlined);
     }

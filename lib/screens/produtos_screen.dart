@@ -88,7 +88,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   Future<void> _buscar() async {
     final like = '%${_termo.trim()}%';
     final rows = await _db.query(
-      "SELECT * FROM products WHERE ativo = 1 AND (descricao LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? OR marca LIKE ?) "
+      "SELECT * FROM products WHERE ativo = 1 AND mostrar_no_app = 1 AND (descricao LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? OR marca LIKE ?) "
       'ORDER BY descricao LIMIT 200',
       [like, like, like, like],
     );

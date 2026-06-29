@@ -154,6 +154,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       _tabelaPrazoId = null;
       _tabelaDias = null;
     }
+    // Quando o Prazo Avulso some (dinheiro/pix) ou fica bloqueado (cliente com
+    // forma definida), limpa para não enviar prazo inválido ao ERP.
+    if (_avulsoOculto || _avulsoBloqueado) {
+      _condicao.clear();
+    }
   }
 
   /// Aplica a forma/prazo pré-fixados no cadastro do cliente. Retorna true
@@ -208,6 +213,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final escolhido = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => const _BuscaSheet(tabela: 'customers', titulo: 'Selecionar cliente', campoNome: 'nome_razao'),
     );
     if (escolhido != null) {
@@ -222,6 +229,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final produto = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => const _BuscaSheet(tabela: 'products', titulo: 'Selecionar produto', campoNome: 'descricao'),
     );
     if (produto == null) return;
@@ -253,10 +262,21 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     }
   }
 
-  bool _isFormaPix() {
-    final f = _formaById(_formaId);
-    return (f?['tipo'] ?? '').toString() == 'pix';
-  }
+  String _formaTipo() => (_formaById(_formaId)?['tipo'] ?? '').toString();
+
+  bool _isFormaPix() => _formaTipo() == 'pix';
+
+  /// Cliente já tem forma de pagamento amarrada no cadastro.
+  bool get _clienteComFormaDefinida => _cliente?['forma_pagamento_id'] != null;
+
+  /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix).
+  bool get _avulsoOculto => _formaTipo() == 'dinheiro' || _formaTipo() == 'pix';
+
+  /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma definida.
+  bool get _avulsoBloqueado => _clienteComFormaDefinida;
+
+  /// Regra 3: havendo Prazo Avulso preenchido, o Prazo/Parcelamento some.
+  bool get _avulsoPreenchido => _condicao.text.trim().isNotEmpty;
 
   Future<void> _salvar() async {
     if (_cliente == null || _itens.isEmpty) {
@@ -459,6 +479,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
       children: [
         _envioCard(),
+        _infoTile(icon: Icons.store_outlined, label: 'Filial / Unidade', value: empresa.isEmpty ? 'Empresa padrão' : empresa),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
           _infoTile(
             icon: Icons.tag,
@@ -500,7 +521,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54))
                 : null,
           ),
-          _infoTile(icon: Icons.store_outlined, label: 'Filial / Unidade', value: empresa.isEmpty ? 'Empresa padrão' : empresa),
           _infoTile(
             icon: Icons.local_shipping_outlined,
             label: 'Endereço de entrega',
@@ -518,9 +538,19 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             hint: _formas.isEmpty ? 'Sincronize para carregar' : 'Selecione',
             onChanged: (id) => setState(() => _aplicarForma(id)),
           )),
-          _field('Prazo Avulso',
-              _campoTexto(_condicao, hint: 'Ex.: 30,60,90', onChanged: (_) => setState(() {}))),
-          if (_tabelas.isNotEmpty)
+          if (!_avulsoOculto)
+            _field('Prazo Avulso',
+                _campoTexto(_condicao,
+                    hint: _avulsoBloqueado ? 'Definido no cadastro do cliente' : 'Ex.: 30,60,90',
+                    enabled: !_avulsoBloqueado,
+                    onChanged: (v) => setState(() {
+                          // Regra 3: ao usar prazo avulso, zera o parcelamento.
+                          if (v.trim().isNotEmpty) {
+                            _tabelaPrazoId = null;
+                            _tabelaDias = null;
+                          }
+                        }))),
+          if (_tabelas.isNotEmpty && !_avulsoPreenchido)
             _field('Prazo / Parcelamento', _dropdown<int?>(
               value: _tabelaPrazoId,
               items: {
@@ -1064,18 +1094,20 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     String? prefix,
     TextInputType? teclado,
     ValueChanged<String>? onChanged,
+    bool enabled = true,
   }) {
     return TextField(
       controller: c,
       keyboardType: teclado,
       onChanged: onChanged,
+      enabled: enabled,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         prefixText: prefix,
         isDense: true,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: enabled ? Colors.white : const Color(0xFFF1F5F9),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
@@ -1228,20 +1260,48 @@ class _BuscaSheet extends StatefulWidget {
 class _BuscaSheetState extends State<_BuscaSheet> {
   final _db = LocalDb.instance;
   List<Map<String, dynamic>> _rows = [];
+  List<String> _grupos = [];
   String _termo = '';
+  String? _grupoSel; // null = Todos
+
+  bool get _isProdutos => widget.tabela == 'products';
 
   @override
   void initState() {
     super.initState();
+    if (_isProdutos) _carregarGrupos();
     _buscar();
+  }
+
+  Future<void> _carregarGrupos() async {
+    final rows = await _db.query(
+      "SELECT DISTINCT grupo FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
+      "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
+    );
+    if (mounted) {
+      setState(() => _grupos =
+          rows.map((r) => (r['grupo'] ?? '').toString()).where((g) => g.isNotEmpty).toList());
+    }
   }
 
   Future<void> _buscar() async {
     final like = '%$_termo%';
-    final rows = await _db.query(
-      'SELECT * FROM ${widget.tabela} WHERE ${widget.campoNome} LIKE ? OR codigo LIKE ? ORDER BY ${widget.campoNome} LIMIT 60',
-      [like, like],
-    );
+    List<Map<String, dynamic>> rows;
+    if (_isProdutos) {
+      final where = StringBuffer(
+          'ativo = 1 AND mostrar_no_app = 1 AND (descricao LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ?)');
+      final args = <Object?>[like, like, like];
+      if (_grupoSel != null) {
+        where.write(' AND grupo = ?');
+        args.add(_grupoSel);
+      }
+      rows = await _db.query('SELECT * FROM products WHERE $where ORDER BY descricao LIMIT 100', args);
+    } else {
+      rows = await _db.query(
+        'SELECT * FROM ${widget.tabela} WHERE ${widget.campoNome} LIKE ? OR codigo LIKE ? ORDER BY ${widget.campoNome} LIMIT 60',
+        [like, like],
+      );
+    }
     if (mounted) setState(() => _rows = rows);
   }
 
@@ -1249,42 +1309,209 @@ class _BuscaSheetState extends State<_BuscaSheet> {
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.8,
+      initialChildSize: 1.0,
+      minChildSize: 0.6,
+      maxChildSize: 1.0,
       builder: (context, controller) {
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextField(
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: widget.titulo,
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
+        return Container(
+          decoration: const BoxDecoration(
+            color: Brand.bg,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 2),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(2)),
                 ),
-                onChanged: (s) {
-                  _termo = s;
-                  _buscar();
-                },
-              ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 6, 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(widget.titulo,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      ),
+                      IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: TextField(
+                    autofocus: false,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      hintText: 'Buscar...',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onChanged: (s) {
+                      _termo = s;
+                      _buscar();
+                    },
+                  ),
+                ),
+                if (_isProdutos && _grupos.isNotEmpty)
+                  SizedBox(
+                    height: 40,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      children: [
+                        _chip('Todos', _grupoSel == null, () => setState(() {
+                              _grupoSel = null;
+                              _buscar();
+                            })),
+                        for (final g in _grupos)
+                          _chip(g, _grupoSel == g, () => setState(() {
+                                _grupoSel = g;
+                                _buscar();
+                              })),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: _rows.isEmpty
+                      ? const Center(child: Text('Nada encontrado.'))
+                      : ListView.separated(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                          itemCount: _rows.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) =>
+                              _isProdutos ? _produtoItem(_rows[i]) : _clienteItem(_rows[i]),
+                        ),
+                ),
+              ],
             ),
-            Expanded(
-              child: ListView.builder(
-                controller: controller,
-                itemCount: _rows.length,
-                itemBuilder: (_, i) {
-                  final r = _rows[i];
-                  return ListTile(
-                    title: Text((r[widget.campoNome] ?? '').toString()),
-                    subtitle: Text('Cód. ${r['codigo'] ?? ''}'),
-                    onTap: () => Navigator.pop(context, r),
-                  );
-                },
-              ),
-            ),
-          ],
+          ),
         );
       },
+    );
+  }
+
+  Widget _chip(String label, bool sel, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: sel,
+        onSelected: (_) => onTap(),
+        selectedColor: Brand.blue,
+        labelStyle: TextStyle(
+            color: sel ? Colors.white : Colors.black87, fontWeight: FontWeight.w600, fontSize: 12.5),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+    );
+  }
+
+  Widget _clienteItem(Map<String, dynamic> r) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text((r[widget.campoNome] ?? '').toString()),
+        subtitle: Text('Cód. ${r['codigo'] ?? ''}'),
+        onTap: () => Navigator.pop(context, r),
+      ),
+    );
+  }
+
+  Widget _produtoItem(Map<String, dynamic> r) {
+    final base = context.read<AppState>().config.baseUrl;
+    final fotoUrl = _fotoBuscaUrl(base, r['foto_url']);
+    final estoque = (r['estoque'] as num?)?.toDouble() ?? 0;
+    final preco = (r['preco_venda'] as num?)?.toDouble() ?? 0;
+    final descricao = (r['descricao'] ?? '').toString();
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.pop(context, r),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              _MiniFoto(url: fotoUrl),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(descricao,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                    const SizedBox(height: 3),
+                    Text(
+                        'Cód. ${r['codigo'] ?? ''}  •  Estoque: ${_fmtEstoque(estoque)} ${r['unidade'] ?? ''}',
+                        style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(brMoney(preco),
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmtEstoque(double v) => v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2);
+}
+
+/// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.
+String? _fotoBuscaUrl(String base, dynamic fotoUrl) {
+  final f = (fotoUrl ?? '').toString().trim();
+  if (f.isEmpty) return null;
+  if (f.startsWith('http://') || f.startsWith('https://')) return f;
+  final b = base.replaceFirst(RegExp(r'/+$'), '');
+  final path = f.startsWith('/') ? f : '/$f';
+  return '$b$path';
+}
+
+class _MiniFoto extends StatelessWidget {
+  const _MiniFoto({required this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    const double size = 46;
+    final placeholder = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Brand.green.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.inventory_2_outlined, color: Brand.green, size: 22),
+    );
+    if (url == null) return placeholder;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.network(
+        url!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => placeholder,
+      ),
     );
   }
 }

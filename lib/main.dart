@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'app_state.dart';
 import 'config.dart';
@@ -22,6 +23,8 @@ Future<void> _aplicarModoTela() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _aplicarModoTela();
+  // Mantém a tela ligada enquanto o app estiver aberto.
+  await WakelockPlus.enable();
   await AppLog.instance.load();
   AppLog.instance.info('app', 'Aplicativo iniciado');
   final config = await AppConfig.load();
@@ -56,6 +59,7 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
     // Reaplica ao voltar ao foco (ex.: depois de fechar o teclado).
     if (state == AppLifecycleState.resumed) {
       _aplicarModoTela();
+      WakelockPlus.enable();
     }
   }
 

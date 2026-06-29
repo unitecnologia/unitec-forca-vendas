@@ -170,6 +170,9 @@ class SyncService extends ChangeNotifier {
           'cliente_id': r['cliente_id'], 'emissao': r['emissao'], 'vencimento': r['vencimento'],
           'valor': _d(r['valor']), 'saldo': _d(r['saldo']), 'forma': r['forma'],
         });
+    if (fullPull) {
+      await _db.deleteAll('historico_vendas');
+    }
     await _db.upsertAll('historico_vendas', data['historico_vendas'] ?? [], (r) => {
           'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
           'total': _d(r['total']), 'status': r['status'], 'tipo': r['tipo'],
