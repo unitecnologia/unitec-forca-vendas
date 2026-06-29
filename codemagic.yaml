@@ -4,7 +4,10 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
-      flutter: stable
+      # Fixado em 3.35.x: a stable atual gera AGP 9.0 (newDsl), que quebra o
+      # build.gradle.kts. Esta versao gera AGP 8.9.1 + Gradle 8.12 + Kotlin 2.1.0
+      # (conjunto testado pelo time do Flutter), onde o build compila sem erro.
+      flutter: 3.35.0
       java: 17
       groups:
         # Grupo com as credenciais da keystore (cadastre no Codemagic):
@@ -22,11 +25,13 @@ workflows:
         script: |
           set -e
           flutter create --org com.unitec --project-name unitec_forca_vendas --platforms=android .
-          # Compatibilidade com AGP 9.0 (padrao no Flutter stable atual): mantem o
-          # DSL legado do Android e o KGP externo que o nosso build.gradle.kts usa.
-          # E o caminho oficial recomendado pelo Flutter ate migrarmos ao novo DSL.
+          # Rede de seguranca (inofensivo no AGP 8.x): se algum dia voltar ao AGP 9,
+          # mantem o DSL legado/KGP externo que o nosso build.gradle.kts usa.
           grep -q '^android.newDsl=' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
           grep -q '^android.builtInKotlin=' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
+          # Diagnostico: registra no log qual AGP/Flutter foi usado de fato.
+          echo "----- Flutter -----"; flutter --version || true
+          echo "----- AGP gerado -----"; grep -i "com.android.application" android/settings.gradle.kts || true
       - name: Aplicar AndroidManifest (permissoes + HTTP cleartext)
         script: |
           set -e
