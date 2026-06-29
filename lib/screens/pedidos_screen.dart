@@ -7,7 +7,10 @@ import '../ui/brand.dart';
 import '../ui/format.dart';
 
 class PedidosScreen extends StatefulWidget {
-  const PedidosScreen({super.key});
+  const PedidosScreen({super.key, this.tipoFiltro});
+
+  /// Quando definido (ex.: 'orcamento'), lista apenas os registros desse tipo.
+  final String? tipoFiltro;
 
   @override
   State<PedidosScreen> createState() => _PedidosScreenState();
@@ -25,11 +28,17 @@ class _PedidosScreenState extends State<PedidosScreen> {
   }
 
   Future<void> _carregar() async {
+    final tipo = widget.tipoFiltro;
+    final whereOutbox = tipo != null ? 'WHERE o.tipo = ?' : '';
+    final whereHist = tipo != null ? 'WHERE h.tipo = ?' : '';
+    final args = tipo != null ? [tipo] : <Object?>[];
+
     // Pedidos lançados neste aparelho (outbox).
     final outbox = await _db.query(
       'SELECT o.uuid, o.numero, o.total, o.status, o.erro, o.created_at, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
-      'ORDER BY o.created_at DESC LIMIT 300',
+      '$whereOutbox ORDER BY o.created_at DESC LIMIT 300',
+      args,
     );
 
     // Histórico de vendas do vendedor logado (vindo do ERP). Sobrevive a
@@ -37,7 +46,8 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final historico = await _db.query(
       'SELECT h.numero, h.total, h.data, c.nome_razao '
       'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
-      'ORDER BY h.data DESC LIMIT 500',
+      '$whereHist ORDER BY h.data DESC LIMIT 500',
+      args,
     );
 
     final numerosOutbox = <String>{
@@ -93,10 +103,15 @@ class _PedidosScreenState extends State<PedidosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final ehOrcamento = widget.tipoFiltro == 'orcamento';
+    final titulo = ehOrcamento ? 'Orçamentos' : 'Pedidos';
+    final vazio = ehOrcamento
+        ? 'Nenhum orçamento feito no app ainda.'
+        : 'Nenhum pedido neste aparelho nem venda no histórico.';
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(
-        title: const Text('Pedidos'),
+        title: Text(titulo),
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
         actions: [
@@ -110,7 +125,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
           : _rows.isEmpty
-              ? const Center(child: Text('Nenhum pedido neste aparelho nem venda no histórico.'))
+              ? Center(child: Text(vazio))
               : RefreshIndicator(
                   onRefresh: _sincronizar,
                   child: ListView.separated(

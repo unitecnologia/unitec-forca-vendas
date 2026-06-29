@@ -69,10 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.read<AppState>();
 
     final itens = <_MenuItem>[
-      _MenuItem('Novo Pedido', Icons.note_add_outlined, Brand.green,
+      _MenuItem('Pedido/Orçamento', Icons.note_add_outlined, Brand.green,
           onTap: () => _abrir(const NovoPedidoScreen(tipoInicial: 'pedido')), destaque: true),
-      _MenuItem('Orçamento', Icons.request_quote_outlined, Brand.blue,
-          onTap: () => _abrir(const NovoPedidoScreen(tipoInicial: 'orcamento'))),
+      _MenuItem('Orçamentos', Icons.request_quote_outlined, Brand.blue,
+          onTap: () => _abrir(const PedidosScreen(tipoFiltro: 'orcamento'))),
       _MenuItem('Rotas', Icons.alt_route_outlined, Brand.blue,
           onTap: () => _emDesenvolvimento('Rotas'), emDesenvolvimento: true),
       _MenuItem('Pedidos', Icons.fact_check_outlined, Brand.blue,
