@@ -22,6 +22,11 @@ workflows:
         script: |
           set -e
           flutter create --org com.unitec --project-name unitec_forca_vendas --platforms=android .
+          # Compatibilidade com AGP 9.0 (padrao no Flutter stable atual): mantem o
+          # DSL legado do Android e o KGP externo que o nosso build.gradle.kts usa.
+          # E o caminho oficial recomendado pelo Flutter ate migrarmos ao novo DSL.
+          grep -q '^android.newDsl=' android/gradle.properties || echo 'android.newDsl=false' >> android/gradle.properties
+          grep -q '^android.builtInKotlin=' android/gradle.properties || echo 'android.builtInKotlin=false' >> android/gradle.properties
       - name: Aplicar AndroidManifest (permissoes + HTTP cleartext)
         script: |
           set -e
