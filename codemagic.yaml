@@ -26,28 +26,53 @@ workflows:
         script: |
           set -e
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-      - name: Configurar assinatura de release (se a keystore estiver definida)
+      - name: Configurar assinatura de release (chave estavel)
         script: |
           set -e
-          if [ -n "$CM_KEYSTORE" ]; then
-            echo "Keystore encontrada: configurando signing de release."
-            echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/release.keystore"
-            cat > android/key.properties <<EOF
-          storePassword=$CM_KEYSTORE_PASSWORD
-          keyPassword=$CM_KEY_PASSWORD
-          keyAlias=$CM_KEY_ALIAS
-          storeFile=$CM_BUILD_DIR/release.keystore
-          EOF
-            cp ci/build.gradle.kts android/app/build.gradle.kts
-            rm -f android/app/build.gradle
+          # O APK SEMPRE e assinado em release. Quando o grupo keystore_credentials
+          # esta preenchido, usamos a chave fixa (atualizacoes funcionam sem
+          # desinstalar). Quando esta vazio, geramos uma keystore de bootstrap e
+          # imprimimos os valores para voce colar no grupo UMA UNICA VEZ.
+          if [ -z "$CM_KEYSTORE" ]; then
+            echo "=================================================================="
+            echo " ATENCAO: grupo keystore_credentials VAZIO."
+            echo " Gerando keystore de bootstrap (assinatura RELEASE)."
+            echo " Para as ATUALIZACOES funcionarem sem desinstalar, copie os"
+            echo " valores abaixo para o grupo keystore_credentials (uma vez)."
+            echo "=================================================================="
+            STOREPASS="unitecfv2026"
+            ALIAS="unitecfv"
+            keytool -genkeypair -v \
+              -keystore "$CM_BUILD_DIR/release.keystore" \
+              -storepass "$STOREPASS" -keypass "$STOREPASS" -alias "$ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Unitec Forca de Vendas, OU=Mobile, O=Unitec, C=BR"
+            echo "----- COPIE PARA O GRUPO keystore_credentials -----"
+            echo "CM_KEYSTORE_PASSWORD=$STOREPASS"
+            echo "CM_KEY_ALIAS=$ALIAS"
+            echo "CM_KEY_PASSWORD=$STOREPASS"
+            echo "CM_KEYSTORE (base64, linha unica):"
+            base64 "$CM_BUILD_DIR/release.keystore" | tr -d '\n'; echo
+            echo "---------------------------------------------------"
+            export CM_KEYSTORE_PASSWORD="$STOREPASS"
+            export CM_KEY_ALIAS="$ALIAS"
+            export CM_KEY_PASSWORD="$STOREPASS"
           else
-            echo "AVISO: CM_KEYSTORE nao definido. O APK sera assinado com a chave DEBUG"
-            echo "       e NAO podera ser instalado por cima de uma build de release."
+            echo "Keystore do grupo encontrada: assinatura estavel (release)."
+            echo "$CM_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/release.keystore"
           fi
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+            "$CM_KEYSTORE_PASSWORD" "$CM_KEY_PASSWORD" "$CM_KEY_ALIAS" "$CM_BUILD_DIR/release.keystore" \
+            > android/key.properties
+          cp ci/build.gradle.kts android/app/build.gradle.kts
+          rm -f android/app/build.gradle
       - name: Instalar dependencias
         script: flutter pub get
-      - name: Build APK release
-        script: flutter build apk --release
+      - name: Build APK release (versionCode incremental)
+        script: |
+          set -e
+          # build-number incremental evita o conflito de "versao ja instalada".
+          flutter build apk --release --build-number=${BUILD_NUMBER:-1}
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
     publishing:
