@@ -35,9 +35,9 @@ class _ItemPedido {
 
   double get desconto {
     if (_descontoPercentual != null && _descontoPercentual! > 0) {
-      return (bruto * _descontoPercentual! / 100).clamp(0, bruto);
+      return (bruto * _descontoPercentual! / 100).clamp(0.0, bruto).toDouble();
     }
-    return _descontoValor.clamp(0, bruto);
+    return _descontoValor.clamp(0.0, bruto).toDouble();
   }
 
   double get descontoPercentualExibicao {
@@ -49,14 +49,14 @@ class _ItemPedido {
   double get descontoValorExibicao => desconto;
 
   void aplicarDescontoPercentual(double pct) {
-    final p = pct.clamp(0, 100);
+    final p = pct.clamp(0.0, 100.0).toDouble();
     _descontoPercentual = p > 0 ? p : null;
     if (p <= 0) _descontoValor = 0;
   }
 
   void aplicarDescontoValor(double valor) {
     _descontoPercentual = null;
-    _descontoValor = valor.clamp(0, bruto);
+    _descontoValor = valor.clamp(0.0, bruto).toDouble();
   }
 
   double get total => bruto - desconto;
@@ -212,7 +212,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   double get _descontoItens => _itens.fold(0.0, (s, i) => s + i.desconto);
   double get _freteValor => _parseNum(_frete.text);
   double get _descontoPedido => _parseNum(_descValor.text);
-  double get _total => (_subtotalItens - _descontoPedido + _freteValor).clamp(0, double.infinity);
+  double get _total => (_subtotalItens - _descontoPedido + _freteValor).clamp(0.0, double.infinity).toDouble();
 
   double _parseNum(String s) =>
       double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
@@ -1307,7 +1307,7 @@ class _ItemTileState extends State<_ItemTile> {
   }
 
   void _alterarQtd(double delta) {
-    final nova = (item.quantidade + delta).clamp(0.001, 999999.0);
+    final nova = (item.quantidade + delta).clamp(0.001, 999999.0).toDouble();
     item.quantidade = nova;
     _qtd.text = _fmtQtd(nova);
     _descPct.text = _fmtNum(item.descontoPercentualExibicao);
@@ -1539,21 +1539,21 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
 
   String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
-  double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0);
+  double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0).toDouble();
 
   double get _bruto => _quantidade * widget.precoUnitario;
 
   double get _desconto {
     final pct = _parseNum(_descPct.text);
-    if (pct > 0) return (_bruto * pct / 100).clamp(0, _bruto);
-    return _parseNum(_descValor.text).clamp(0, _bruto);
+    if (pct > 0) return (_bruto * pct / 100).clamp(0.0, _bruto).toDouble();
+    return _parseNum(_descValor.text).clamp(0.0, _bruto).toDouble();
   }
 
   void _syncFromPct() {
     if (_sincDesc) return;
     _sincDesc = true;
     final pct = _parseNum(_descPct.text);
-    _descValor.text = _fmtNum(pct > 0 ? _bruto * pct / 100 : 0);
+    _descValor.text = _fmtNum((pct > 0 ? _bruto * pct / 100 : 0.0).toDouble());
     _sincDesc = false;
     setState(() {});
   }
@@ -1562,7 +1562,7 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
     if (_sincDesc) return;
     _sincDesc = true;
     final valor = _parseNum(_descValor.text);
-    final pct = _bruto > 0 ? valor / _bruto * 100 : 0;
+    final pct = _bruto > 0 ? valor / _bruto * 100.0 : 0.0;
     _descPct.text = _fmtNum(pct);
     _sincDesc = false;
     setState(() {});
