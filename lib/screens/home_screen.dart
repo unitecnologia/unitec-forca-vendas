@@ -7,6 +7,7 @@ import '../app_state.dart';
 import '../db/local_db.dart';
 import '../sync/sync_service.dart';
 import '../ui/brand.dart';
+import '../ui/home_menu_card.dart';
 import 'clientes_screen.dart';
 import 'dashboard_screen.dart';
 import 'log_screen.dart';
@@ -69,47 +70,55 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.read<AppState>();
 
     final itens = <_MenuItem>[
-      _MenuItem('Pedido/Orçamento', Icons.note_add_outlined, Brand.green,
+      _MenuItem('Pedido/Orçamento', Icons.note_add_rounded, Brand.green,
           onTap: () => _abrir(const NovoPedidoScreen(tipoInicial: 'pedido')), destaque: true),
-      _MenuItem('Orçamentos', Icons.request_quote_outlined, Brand.blue,
+      _MenuItem('Orçamentos', Icons.request_quote_rounded, Brand.blue,
           onTap: () => _abrir(const PedidosScreen(tipoFiltro: 'orcamento'))),
-      _MenuItem('Rotas', Icons.alt_route_outlined, Brand.blue,
+      _MenuItem('Rotas', Icons.alt_route_rounded, Brand.blue,
           onTap: () => _emDesenvolvimento('Rotas'), emDesenvolvimento: true),
-      _MenuItem('Pedidos', Icons.fact_check_outlined, Brand.blue,
+      _MenuItem('Pedidos', Icons.fact_check_rounded, Brand.blue,
           onTap: () => _abrir(const PedidosScreen()), badge: _pendentes > 0 ? '$_pendentes' : null),
-      _MenuItem('Clientes', Icons.people_alt_outlined, Brand.green,
+      _MenuItem('Clientes', Icons.people_alt_rounded, Brand.green,
           onTap: () => _abrir(const ClientesScreen())),
-      _MenuItem('Produtos', Icons.inventory_2_outlined, Brand.blue,
+      _MenuItem('Produtos', Icons.inventory_2_rounded, Brand.blue,
           onTap: () => _abrir(const ProdutosScreen())),
-      _MenuItem('Expectativa de Vendas', Icons.track_changes_outlined, Brand.green,
+      _MenuItem('Expectativa de Vendas', Icons.track_changes_rounded, Brand.green,
           onTap: () => _emDesenvolvimento('Expectativa de Vendas'), emDesenvolvimento: true),
-      _MenuItem('Saldo Flex', Icons.account_balance_wallet_outlined, Brand.blue,
+      _MenuItem('Saldo Flex', Icons.account_balance_wallet_rounded, Brand.blue,
           onTap: () => _emDesenvolvimento('Saldo Flex'), emDesenvolvimento: true),
-      _MenuItem('Visitas sem Venda', Icons.location_off_outlined, Brand.green,
+      _MenuItem('Visitas sem Venda', Icons.location_off_rounded, Brand.green,
           onTap: () => _emDesenvolvimento('Visitas sem Venda'), emDesenvolvimento: true),
-      _MenuItem('Dashboard', Icons.insights_outlined, Brand.blue,
+      _MenuItem('Dashboard', Icons.insights_rounded, Brand.blue,
           onTap: () => _abrir(const DashboardScreen()), novo: true),
-      _MenuItem('Títulos', Icons.request_quote_outlined, Brand.green,
+      _MenuItem('Títulos', Icons.payments_rounded, Brand.green,
           onTap: () => _abrir(const TitulosScreen())),
-      _MenuItem('Relatórios', Icons.bar_chart_outlined, Brand.blue,
+      _MenuItem('Relatórios', Icons.bar_chart_rounded, Brand.blue,
           onTap: () => _emDesenvolvimento('Relatórios'), emDesenvolvimento: true),
-      _MenuItem('Sincronizar', Icons.sync_outlined, Brand.green, onTap: () async {
+      _MenuItem('Sincronizar', Icons.sync_rounded, Brand.green, onTap: () async {
         await state.sync.syncNow();
         await _atualizarContadores();
       }),
-      _MenuItem('Sair', Icons.logout_outlined, Colors.redAccent,
+      _MenuItem('Sair', Icons.logout_rounded, const Color(0xFFD32F2F),
           onTap: () => _confirmarSair(state)),
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F4F8),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await state.sync.syncNow();
-          await _atualizarContadores();
-        },
-        child: CustomScrollView(
-          slivers: [
+      backgroundColor: Brand.bg,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFE3ECF5), Color(0xFFF1F4F8), Color(0xFFE8EEF5)],
+          ),
+        ),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await state.sync.syncNow();
+            await _atualizarContadores();
+          },
+          child: CustomScrollView(
+            slivers: [
             SliverToBoxAdapter(child: _Header(state: state)),
             SliverToBoxAdapter(
               child: Padding(
@@ -128,11 +137,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                 child: Row(
                   children: [
-                    _MiniStat(label: 'Produtos', value: _produtos, icon: Icons.inventory_2_outlined),
+                    _MiniStat(label: 'Produtos', value: _produtos, icon: Icons.inventory_2_rounded, color: Brand.blue),
                     const SizedBox(width: 10),
-                    _MiniStat(label: 'Clientes', value: _clientes, icon: Icons.people_alt_outlined),
+                    _MiniStat(label: 'Clientes', value: _clientes, icon: Icons.people_alt_rounded, color: Brand.green),
                     const SizedBox(width: 10),
-                    _MiniStat(label: 'Pendentes', value: _pendentes, icon: Icons.cloud_upload_outlined),
+                    _MiniStat(label: 'Pendentes', value: _pendentes, icon: Icons.cloud_upload_rounded, color: const Color(0xFF00838F)),
                   ],
                 ),
               ),
@@ -142,17 +151,27 @@ class _HomeScreenState extends State<HomeScreen> {
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 1.7,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.62,
                 ),
                 delegate: SliverChildBuilderDelegate(
-                  (context, i) => _MenuCard(item: itens[i]),
+                  (context, i) => HomeMenuCard(
+                    label: itens[i].label,
+                    icon: itens[i].icon,
+                    color: itens[i].color,
+                    onTap: itens[i].onTap,
+                    destaque: itens[i].destaque,
+                    emDesenvolvimento: itens[i].emDesenvolvimento,
+                    novo: itens[i].novo,
+                    badge: itens[i].badge,
+                  ),
                   childCount: itens.length,
                 ),
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -207,8 +226,16 @@ class _Header extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.white, Color(0xFFE3F2FD)],
+                  ),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x40000000), blurRadius: 10, offset: Offset(0, 4)),
+                    BoxShadow(color: Color(0x66FFFFFF), blurRadius: 2, offset: Offset(-1, -1)),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: const Text('U',
@@ -281,106 +308,13 @@ class _MenuItem {
   final String? badge;
 }
 
-class _MenuCard extends StatelessWidget {
-  const _MenuCard({required this.item});
-
-  final _MenuItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final opacity = item.emDesenvolvimento ? 0.55 : 1.0;
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      elevation: 1.5,
-      shadowColor: Colors.black26,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: item.onTap,
-        child: Opacity(
-          opacity: opacity,
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(11),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: item.color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(11),
-                      ),
-                      child: Icon(item.icon, color: item.color, size: 21),
-                    ),
-                    Text(
-                      item.label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF263238),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (item.novo)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _Tag(text: 'Novo', color: Brand.green),
-                ),
-              if (item.badge != null)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _Tag(text: item.badge!, color: Colors.redAccent),
-                ),
-              if (item.emDesenvolvimento)
-                const Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Icon(Icons.construction_outlined, size: 16, color: Colors.orange),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.text, required this.color});
-
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(text,
-          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
 class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.label, required this.value, required this.icon});
+  const _MiniStat({required this.label, required this.value, required this.icon, required this.color});
 
   final String label;
   final int value;
   final IconData icon;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -388,14 +322,24 @@ class _MiniStat extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(Colors.white, color, 0.08)!,
+              Color.lerp(const Color(0xFFEEF2F7), color, 0.14)!,
+            ],
+          ),
+          border: Border.all(color: color.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(color: color.withValues(alpha: 0.18), blurRadius: 10, offset: const Offset(0, 4)),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: Brand.blue, size: 20),
-            const SizedBox(height: 4),
+            HomeMenuIcon3D(icon: icon, color: color, size: 36),
+            const SizedBox(height: 6),
             Text('$value', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
           ],
@@ -428,12 +372,20 @@ class _SyncCard extends StatelessWidget {
             : '—';
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+            gradient: LinearGradient(
+              colors: [
+                Color.lerp(Colors.white, color, 0.06)!,
+                Color.lerp(const Color(0xFFEEF2F7), color, 0.12)!,
+              ],
+            ),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+            boxShadow: [
+              BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 4)),
+            ],
           ),
           child: ListTile(
-            leading: Icon(Icons.sync, color: color),
+            leading: HomeMenuIcon3D(icon: Icons.sync_rounded, color: color, size: 40),
             title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text('Última sincronização: $last'),
             trailing: IconButton(icon: const Icon(Icons.refresh), onPressed: onSync),
