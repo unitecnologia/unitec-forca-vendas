@@ -25,15 +25,18 @@ class _PedidosScreenState extends State<PedidosScreen> {
   void initState() {
     super.initState();
     _carregar();
+    if (widget.tipoFiltro == 'orcamento') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _sincronizar());
+    }
   }
 
   Future<void> _carregar() async {
     final tipo = widget.tipoFiltro;
+    final ehOrcamento = tipo == 'orcamento';
     final whereOutbox = tipo != null ? 'WHERE o.tipo = ?' : '';
-    final whereHist = tipo != null ? 'WHERE h.tipo = ?' : '';
     final args = tipo != null ? [tipo] : <Object?>[];
 
-    // Pedidos lançados neste aparelho (outbox).
+    // Pedidos/orçamentos lançados neste aparelho (outbox).
     final outbox = await _db.query(
       'SELECT o.uuid, o.numero, o.total, o.status, o.erro, o.created_at, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
@@ -41,14 +44,23 @@ class _PedidosScreenState extends State<PedidosScreen> {
       args,
     );
 
-    // Histórico de vendas do vendedor logado (vindo do ERP). Sobrevive a
-    // reinstalação porque é baixado a cada sync completo.
-    final historico = await _db.query(
-      'SELECT h.numero, h.total, h.data, c.nome_razao '
-      'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
-      '$whereHist ORDER BY h.data DESC LIMIT 500',
-      args,
-    );
+    // Histórico vindo do ERP (sobrevive a reinstalação após sync completo).
+    final List<Map<String, dynamic>> historico;
+    if (ehOrcamento) {
+      historico = await _db.query(
+        'SELECT h.numero, h.total, h.data, h.status, c.nome_razao '
+        'FROM historico_orcamentos h LEFT JOIN customers c ON c.id = h.cliente_id '
+        'ORDER BY h.data DESC LIMIT 500',
+      );
+    } else {
+      final whereHist = tipo != null ? 'WHERE h.tipo = ?' : '';
+      historico = await _db.query(
+        'SELECT h.numero, h.total, h.data, h.status, c.nome_razao '
+        'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
+        '$whereHist ORDER BY h.data DESC LIMIT 500',
+        args,
+      );
+    }
 
     final numerosOutbox = <String>{
       for (final o in outbox)
@@ -76,7 +88,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
         'nome_razao': h['nome_razao'],
         'numero': h['numero'],
         'total': h['total'],
-        'status': 'faturado',
+        'status': (h['status'] ?? 'erp').toString(),
         'erro': '',
         'created_at': h['data'],
       });
@@ -106,7 +118,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final ehOrcamento = widget.tipoFiltro == 'orcamento';
     final titulo = ehOrcamento ? 'Orçamentos' : 'Pedidos';
     final vazio = ehOrcamento
-        ? 'Nenhum orçamento feito no app ainda.'
+        ? 'Nenhum orçamento neste aparelho nem nos últimos 30 dias do ERP.\nToque em sincronizar após reinstalar o app.'
         : 'Nenhum pedido neste aparelho nem venda no histórico.';
     return Scaffold(
       backgroundColor: Brand.bg,
@@ -152,6 +164,14 @@ class _PedidoCard extends StatelessWidget {
         return (Colors.red, 'Erro', Icons.error_outline);
       case 'faturado':
         return (Brand.blue, 'ERP', Icons.receipt_long_outlined);
+      case 'aberto':
+        return (Brand.blue, 'Aberto', Icons.description_outlined);
+      case 'fechado':
+        return (Brand.green, 'Fechado', Icons.check_circle_outline);
+      case 'cancelado':
+        return (Colors.red, 'Cancelado', Icons.cancel_outlined);
+      case 'importado':
+        return (const Color(0xFF00838F), 'Importado', Icons.cloud_download_outlined);
       default:
         return (Colors.orange, 'Pendente', Icons.cloud_upload_outlined);
     }

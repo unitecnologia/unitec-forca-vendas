@@ -2,10 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../api/api_client.dart';
+import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
+import '../ui/cpf_cnpj_formatter.dart';
 
 /// Cadastro rápido de um novo cliente direto no aparelho.
 ///
@@ -38,6 +42,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
   final _limite = TextEditingController();
 
   bool _salvando = false;
+  bool _consultandoCnpj = false;
 
   @override
   void dispose() {
@@ -51,6 +56,86 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
   }
 
   String _t(TextEditingController c) => c.text.trim();
+
+  void _setIfFilled(TextEditingController c, dynamic value) {
+    final text = (value ?? '').toString().trim();
+    if (text.isNotEmpty) {
+      c.text = text;
+    }
+  }
+
+  void _aplicarTelefone(String? phone, {String? fallback}) {
+    for (final raw in [phone, fallback]) {
+      if (raw == null || raw.trim().isEmpty) continue;
+      final digits = CpfCnpjInputFormatter.onlyDigits(raw);
+      if (digits.length < 10) continue;
+
+      final isCelular = digits.length >= 11 && digits[2] == '9';
+      if (isCelular) {
+        if (_t(_celular).isEmpty) _celular.text = raw.trim();
+      } else if (_t(_fone).isEmpty) {
+        _fone.text = raw.trim();
+      } else if (_t(_celular).isEmpty) {
+        _celular.text = raw.trim();
+      }
+    }
+  }
+
+  Future<void> _pesquisarCnpj() async {
+    final digits = CpfCnpjInputFormatter.onlyDigits(_cpfCnpj.text);
+
+    if (digits.length != 14) {
+      _avisa('Informe um CNPJ completo com 14 dígitos para pesquisar.');
+      return;
+    }
+
+    final state = context.read<AppState>();
+    if (!state.isLoggedIn) {
+      _avisa('Faça login no ERP para consultar o CNPJ.');
+      return;
+    }
+
+    setState(() => _consultandoCnpj = true);
+
+    try {
+      final data = await state.api.lookupCnpj(digits);
+      _aplicarConsultaCnpj(data);
+      if (!mounted) return;
+      _avisa('Dados da empresa preenchidos automaticamente.', sucesso: true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _avisa(e.message);
+    } catch (e) {
+      if (!mounted) return;
+      _avisa('Não foi possível consultar o CNPJ: $e');
+    } finally {
+      if (mounted) setState(() => _consultandoCnpj = false);
+    }
+  }
+
+  void _aplicarConsultaCnpj(Map<String, dynamic> data) {
+    _setIfFilled(_cpfCnpj, data['cpf_cnpj']);
+    _setIfFilled(_nome, data['nome_razao']);
+    _setIfFilled(_fantasia, data['apelido_fantasia']);
+    _setIfFilled(_cep, data['cep']);
+    _setIfFilled(_endereco, data['endereco']);
+    _setIfFilled(_numero, data['numero']);
+    _setIfFilled(_bairro, data['bairro']);
+    _setIfFilled(_cidade, data['cidade_nome']);
+    _setIfFilled(_uf, data['uf']);
+    _setIfFilled(_email, data['email']);
+    _aplicarTelefone(data['fone1']?.toString(), fallback: data['fone2']?.toString());
+  }
+
+  void _avisa(String msg, {bool sucesso = false}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: sucesso ? Brand.green : null,
+      ));
+  }
 
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
@@ -130,7 +215,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
             _secao('Identificação'),
             _campo(_nome, 'Nome / Razão social', obrigatorio: true, capitalizar: true),
             _campo(_fantasia, 'Apelido / Nome fantasia', capitalizar: true),
-            _campo(_cpfCnpj, 'CPF / CNPJ', teclado: TextInputType.number),
+            _campoCpfCnpj(),
             _secao('Contato'),
             _campo(_celular, 'Celular / WhatsApp', teclado: TextInputType.phone),
             _campo(_fone, 'Telefone fixo', teclado: TextInputType.phone),
@@ -179,6 +264,55 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _campoCpfCnpj() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _cpfCnpj,
+              keyboardType: TextInputType.number,
+              inputFormatters: [CpfCnpjInputFormatter()],
+              onFieldSubmitted: (_) => _pesquisarCnpj(),
+              decoration: InputDecoration(
+                labelText: 'CPF / CNPJ',
+                helperText: 'CNPJ: toque em Pesquisar para buscar na Receita',
+                helperMaxLines: 2,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: FilledButton.tonalIcon(
+              onPressed: _consultandoCnpj ? null : _pesquisarCnpj,
+              icon: _consultandoCnpj
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search_rounded),
+              label: Text(_consultandoCnpj ? '...' : 'Pesquisar'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

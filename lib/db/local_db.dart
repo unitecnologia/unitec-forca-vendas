@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 4,
+      version: 6,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -32,6 +32,12 @@ class LocalDb {
           await db.execute('ALTER TABLE customers ADD COLUMN forma_pagamento_id INTEGER');
           await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_id INTEGER');
           await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_dias TEXT');
+        }
+        if (oldVersion < 5) {
+          await db.execute(_createHistoricoOrcamentosSql);
+        }
+        if (oldVersion < 6) {
+          await db.execute(_createVisitasSemVendaSql);
         }
       },
       onCreate: (db, _) async {
@@ -77,6 +83,7 @@ class LocalDb {
             id INTEGER PRIMARY KEY, numero TEXT, data TEXT, cliente_id INTEGER,
             total REAL, status TEXT, tipo TEXT
           )''');
+        await db.execute(_createHistoricoOrcamentosSql);
         await db.execute('''
           CREATE TABLE outbox_orders (
             uuid TEXT PRIMARY KEY,
@@ -94,9 +101,28 @@ class LocalDb {
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
         await db.execute(_createOutboxCustomersSql);
         await db.execute(_createFormasPagamentoSql);
+        await db.execute(_createVisitasSemVendaSql);
       },
     );
   }
+
+  static const String _createVisitasSemVendaSql = '''
+          CREATE TABLE IF NOT EXISTS visitas_sem_venda (
+            uuid TEXT PRIMARY KEY,
+            cliente_id INTEGER,
+            motivo TEXT,
+            latitude REAL,
+            longitude REAL,
+            created_at TEXT,
+            status TEXT,
+            erro TEXT
+          )''';
+
+  static const String _createHistoricoOrcamentosSql = '''
+          CREATE TABLE IF NOT EXISTS historico_orcamentos (
+            id INTEGER PRIMARY KEY, numero TEXT, data TEXT, cliente_id INTEGER,
+            total REAL, status TEXT
+          )''';
 
   static const String _createFormasPagamentoSql = '''
           CREATE TABLE IF NOT EXISTS formas_pagamento (
@@ -221,6 +247,30 @@ class LocalDb {
     await database.update(
       'outbox_customers',
       {'status': status, 'erro': erro, 'server_id': serverId},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+  }
+
+  // ---- Visitas sem venda -------------------------------------------------
+
+  Future<void> insertVisitaSemVenda(Map<String, dynamic> row) async {
+    final database = await db;
+    await database.insert('visitas_sem_venda', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<Map<String, dynamic>>> pendingVisitasSemVenda() async {
+    final database = await db;
+    return database.query('visitas_sem_venda',
+        where: 'status = ?', whereArgs: ['pendente'], orderBy: 'created_at');
+  }
+
+  Future<void> markVisitaSemVenda(String uuid, String status, {String? erro}) async {
+    final database = await db;
+    await database.update(
+      'visitas_sem_venda',
+      {'status': status, 'erro': erro},
       where: 'uuid = ?',
       whereArgs: [uuid],
     );

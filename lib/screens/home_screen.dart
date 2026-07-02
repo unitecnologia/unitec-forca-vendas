@@ -15,6 +15,7 @@ import 'novo_pedido_screen.dart';
 import 'pedidos_screen.dart';
 import 'produtos_screen.dart';
 import 'titulos_screen.dart';
+import 'visitas_sem_venda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -82,14 +83,10 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => _abrir(const ClientesScreen())),
       _MenuItem('Produtos', Icons.inventory_2_rounded, Brand.blue,
           onTap: () => _abrir(const ProdutosScreen())),
-      _MenuItem('Expectativa de Vendas', Icons.track_changes_rounded, Brand.green,
-          onTap: () => _emDesenvolvimento('Expectativa de Vendas'), emDesenvolvimento: true),
-      _MenuItem('Saldo Flex', Icons.account_balance_wallet_rounded, Brand.blue,
-          onTap: () => _emDesenvolvimento('Saldo Flex'), emDesenvolvimento: true),
       _MenuItem('Visitas sem Venda', Icons.location_off_rounded, Brand.green,
-          onTap: () => _emDesenvolvimento('Visitas sem Venda'), emDesenvolvimento: true),
+          onTap: () => _abrir(const VisitasSemVendaScreen())),
       _MenuItem('Dashboard', Icons.insights_rounded, Brand.blue,
-          onTap: () => _abrir(const DashboardScreen()), novo: true),
+          onTap: () => _abrir(const DashboardScreen())),
       _MenuItem('Títulos', Icons.payments_rounded, Brand.green,
           onTap: () => _abrir(const TitulosScreen())),
       _MenuItem('Relatórios', Icons.bar_chart_rounded, Brand.blue,

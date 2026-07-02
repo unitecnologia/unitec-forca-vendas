@@ -18,16 +18,47 @@ class _ItemPedido {
     required this.descricao,
     required this.quantidade,
     required this.precoUnitario,
-    this.desconto = 0,
-  });
+    double desconto = 0,
+    double? descontoPercentual,
+  })  : _descontoValor = desconto,
+        _descontoPercentual = descontoPercentual;
 
   final int productId;
   final String descricao;
   double quantidade;
-  double precoUnitario;
-  double desconto;
+  final double precoUnitario;
+
+  double? _descontoPercentual;
+  double _descontoValor;
 
   double get bruto => quantidade * precoUnitario;
+
+  double get desconto {
+    if (_descontoPercentual != null && _descontoPercentual! > 0) {
+      return (bruto * _descontoPercentual! / 100).clamp(0, bruto);
+    }
+    return _descontoValor.clamp(0, bruto);
+  }
+
+  double get descontoPercentualExibicao {
+    if (_descontoPercentual != null) return _descontoPercentual!;
+    if (bruto <= 0) return 0;
+    return desconto / bruto * 100;
+  }
+
+  double get descontoValorExibicao => desconto;
+
+  void aplicarDescontoPercentual(double pct) {
+    final p = pct.clamp(0, 100);
+    _descontoPercentual = p > 0 ? p : null;
+    if (p <= 0) _descontoValor = 0;
+  }
+
+  void aplicarDescontoValor(double valor) {
+    _descontoPercentual = null;
+    _descontoValor = valor.clamp(0, bruto);
+  }
+
   double get total => bruto - desconto;
 }
 
@@ -233,14 +264,25 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => const _BuscaSheet(tabela: 'products', titulo: 'Selecionar produto', campoNome: 'descricao'),
     );
-    if (produto == null) return;
-    setState(() {
-      _itens.add(_ItemPedido(
-        productId: produto['id'] as int,
+    if (produto == null || !mounted) return;
+
+    final preco = (produto['preco_venda'] as num?)?.toDouble() ?? 0.0;
+    final item = await showModalBottomSheet<_ItemPedido>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdicionarItemSheet(
         descricao: (produto['descricao'] ?? '').toString(),
-        quantidade: 1,
-        precoUnitario: (produto['preco_venda'] as num?)?.toDouble() ?? 0.0,
-      ));
+        precoUnitario: preco,
+        productId: produto['id'] as int,
+      ),
+    );
+    if (item == null) return;
+
+    setState(() {
+      _itens.add(item);
+      _recalcDescontoDePct();
     });
   }
 
@@ -579,15 +621,31 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return Column(
       children: [
         Container(
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.white, Color(0xFFF4F8FC)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(color: Brand.blue.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 4)),
+            ],
+          ),
           child: Column(
             children: [
               _resumoRow('Total de itens', '${_itens.length}'),
+              _resumoRow('Valor bruto', brMoney(_brutoItens)),
+              if (_descontoItens > 0)
+                _resumoRow('Desconto nos itens', brMoney(_descontoItens), valorColor: Colors.orange.shade800),
               _resumoRow('Valor dos produtos', brMoney(_subtotalItens)),
               _resumoRow('Frete', brMoney(_freteValor)),
-              _resumoRow('Desconto', brMoney(_descontoPedido)),
-              const Divider(),
+              if (_descontoPedido > 0)
+                _resumoRow('Desconto do pedido', brMoney(_descontoPedido), valorColor: Colors.orange.shade800),
+              const Divider(height: 20),
               _resumoRow('Valor total', brMoney(_total), destaque: true),
             ],
           ),
@@ -599,9 +657,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               Expanded(
                 child: FilledButton.icon(
                   onPressed: _adicionarItem,
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.add_rounded),
                   label: const Text('Adicionar Item'),
-                  style: FilledButton.styleFrom(backgroundColor: Brand.blue),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.blue,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
             ],
@@ -609,11 +671,21 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         ),
         Expanded(
           child: _itens.isEmpty
-              ? const Center(child: Text('Nenhum item adicionado.', style: TextStyle(color: Colors.black54)))
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey.shade400),
+                      const SizedBox(height: 8),
+                      const Text('Nenhum item adicionado.', style: TextStyle(color: Colors.black54)),
+                    ],
+                  ),
+                )
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
                   itemCount: _itens.length,
                   itemBuilder: (_, i) => _ItemTile(
+                    key: ValueKey('item-$i-${_itens[i].productId}'),
                     indice: i + 1,
                     item: _itens[i],
                     onChanged: () {
@@ -1113,7 +1185,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _resumoRow(String label, String valor, {bool destaque = false}) {
+  Widget _resumoRow(String label, String valor, {bool destaque = false, Color? valorColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1127,7 +1199,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: destaque ? 17 : 14,
-                  color: destaque ? Brand.green : const Color(0xFF263238))),
+                  color: valorColor ?? (destaque ? Brand.green : const Color(0xFF263238)))),
         ],
       ),
     );
@@ -1154,8 +1226,14 @@ class _TabContent extends StatelessWidget {
   }
 }
 
-class _ItemTile extends StatelessWidget {
-  const _ItemTile({required this.indice, required this.item, required this.onChanged, required this.onRemove});
+class _ItemTile extends StatefulWidget {
+  const _ItemTile({
+    super.key,
+    required this.indice,
+    required this.item,
+    required this.onChanged,
+    required this.onRemove,
+  });
 
   final int indice;
   final _ItemPedido item;
@@ -1163,84 +1241,467 @@ class _ItemTile extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
+  State<_ItemTile> createState() => _ItemTileState();
+}
+
+class _ItemTileState extends State<_ItemTile> {
+  late final TextEditingController _qtd;
+  late final TextEditingController _descPct;
+  late final TextEditingController _descValor;
+  bool _sincDesc = false;
+
+  _ItemPedido get item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtd = TextEditingController(text: _fmtQtd(item.quantidade));
+    _descPct = TextEditingController(text: _fmtNum(item.descontoPercentualExibicao));
+    _descValor = TextEditingController(text: _fmtNum(item.descontoValorExibicao));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ItemTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item != item) {
+      _qtd.text = _fmtQtd(item.quantidade);
+      _descPct.text = _fmtNum(item.descontoPercentualExibicao);
+      _descValor.text = _fmtNum(item.descontoValorExibicao);
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtd.dispose();
+    _descPct.dispose();
+    _descValor.dispose();
+    super.dispose();
+  }
+
+  double _parseNum(String s) =>
+      double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+
+  String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
+
+  String _fmtQtd(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll('.', ',');
+
+  void _syncDescFromPct() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    item.aplicarDescontoPercentual(_parseNum(_descPct.text));
+    _descValor.text = _fmtNum(item.descontoValorExibicao);
+    _sincDesc = false;
+    widget.onChanged();
+    setState(() {});
+  }
+
+  void _syncDescFromValor() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    item.aplicarDescontoValor(_parseNum(_descValor.text));
+    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
+    _sincDesc = false;
+    widget.onChanged();
+    setState(() {});
+  }
+
+  void _alterarQtd(double delta) {
+    final nova = (item.quantidade + delta).clamp(0.001, 999999.0);
+    item.quantidade = nova;
+    _qtd.text = _fmtQtd(nova);
+    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
+    _descValor.text = _fmtNum(item.descontoValorExibicao);
+    widget.onChanged();
+    setState(() {});
+  }
+
+  void _aplicarQtd(String s) {
+    final v = _parseNum(s);
+    if (v <= 0) return;
+    item.quantidade = v;
+    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
+    _descValor.text = _fmtNum(item.descontoValorExibicao);
+    widget.onChanged();
+    setState(() {});
+  }
+
+  InputDecoration _dec(String label, {String? suffix, bool readOnly = false}) {
+    return InputDecoration(
+      labelText: label,
+      suffixText: suffix,
+      isDense: true,
+      filled: true,
+      fillColor: readOnly ? const Color(0xFFF1F5F9) : Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: readOnly ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(color: Brand.blue.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3)),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$indice. ', style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
-                Expanded(child: Text(item.descricao, maxLines: 2, overflow: TextOverflow.ellipsis)),
-                IconButton(icon: const Icon(Icons.delete_outline), color: Colors.redAccent, onPressed: onRemove),
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Brand.blue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('${widget.indice}',
+                      style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 12)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(item.descricao,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, height: 1.2)),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  color: Colors.redAccent,
+                  onPressed: widget.onRemove,
+                ),
               ],
             ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
-                  child: _NumField(
-                    label: 'Qtd',
-                    value: item.quantidade,
-                    onChanged: (v) {
-                      item.quantidade = v;
-                      onChanged();
-                    },
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Quantidade', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          _qtdBtn(Icons.remove_rounded, () => _alterarQtd(-1)),
+                          Expanded(
+                            child: TextField(
+                              controller: _qtd,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              textAlign: TextAlign.center,
+                              decoration: _dec('Qtd'),
+                              onSubmitted: _aplicarQtd,
+                              onEditingComplete: () => _aplicarQtd(_qtd.text),
+                            ),
+                          ),
+                          _qtdBtn(Icons.add_rounded, () => _alterarQtd(1)),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _NumField(
-                    label: 'Preço',
-                    value: item.precoUnitario,
-                    onChanged: (v) {
-                      item.precoUnitario = v;
-                      onChanged();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _NumField(
-                    label: 'Desc.',
-                    value: item.desconto,
-                    onChanged: (v) {
-                      item.desconto = v;
-                      onChanged();
-                    },
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Preço unit.', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                      const SizedBox(height: 4),
+                      Container(
+                        height: 42,
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          brMoney(item.precoUnitario),
+                          style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('Total do item: ${brMoney(item.total)}',
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
-              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _descPct,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _dec('Desc. %', suffix: '%'),
+                    onChanged: (_) => _syncDescFromPct(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _descValor,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _dec('Desc. R\$', suffix: 'R\$'),
+                    onChanged: (_) => _syncDescFromValor(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Bruto: ${brMoney(item.bruto)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                Text('Total: ${brMoney(item.total)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _qtdBtn(IconData icon, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Material(
+        color: Brand.blue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 34,
+            height: 42,
+            child: Icon(icon, size: 18, color: Brand.blue),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _NumField extends StatelessWidget {
-  const _NumField({required this.label, required this.value, required this.onChanged});
+class _AdicionarItemSheet extends StatefulWidget {
+  const _AdicionarItemSheet({
+    required this.productId,
+    required this.descricao,
+    required this.precoUnitario,
+  });
 
-  final String label;
-  final double value;
-  final ValueChanged<double> onChanged;
+  final int productId;
+  final String descricao;
+  final double precoUnitario;
+
+  @override
+  State<_AdicionarItemSheet> createState() => _AdicionarItemSheetState();
+}
+
+class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
+  final _qtd = TextEditingController(text: '1');
+  final _descPct = TextEditingController(text: '0,00');
+  final _descValor = TextEditingController(text: '0,00');
+  bool _sincDesc = false;
+
+  @override
+  void dispose() {
+    _qtd.dispose();
+    _descPct.dispose();
+    _descValor.dispose();
+    super.dispose();
+  }
+
+  double _parseNum(String s) =>
+      double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+
+  String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
+
+  double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0);
+
+  double get _bruto => _quantidade * widget.precoUnitario;
+
+  double get _desconto {
+    final pct = _parseNum(_descPct.text);
+    if (pct > 0) return (_bruto * pct / 100).clamp(0, _bruto);
+    return _parseNum(_descValor.text).clamp(0, _bruto);
+  }
+
+  void _syncFromPct() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    final pct = _parseNum(_descPct.text);
+    _descValor.text = _fmtNum(pct > 0 ? _bruto * pct / 100 : 0);
+    _sincDesc = false;
+    setState(() {});
+  }
+
+  void _syncFromValor() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    final valor = _parseNum(_descValor.text);
+    final pct = _bruto > 0 ? valor / _bruto * 100 : 0;
+    _descPct.text = _fmtNum(pct);
+    _sincDesc = false;
+    setState(() {});
+  }
+
+  void _confirmar() {
+    final qtd = _quantidade;
+    if (qtd <= 0) return;
+
+    final pct = _parseNum(_descPct.text);
+    final item = _ItemPedido(
+      productId: widget.productId,
+      descricao: widget.descricao,
+      quantidade: qtd,
+      precoUnitario: widget.precoUnitario,
+      descontoPercentual: pct > 0 ? pct : null,
+      desconto: pct > 0 ? 0 : _parseNum(_descValor.text),
+    );
+
+    Navigator.pop(context, item);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      initialValue: value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      decoration: InputDecoration(labelText: label, isDense: true),
-      onChanged: (s) => onChanged(double.tryParse(s.replaceAll(',', '.')) ?? 0),
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(widget.descricao,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Preço unitário (bloqueado)', style: TextStyle(color: Colors.black54)),
+                      Text(brMoney(widget.precoUnitario),
+                          style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _qtd,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Quantidade',
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                  ),
+                  onChanged: (_) {
+                    _syncFromPct();
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _descPct,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Desconto %',
+                          suffixText: '%',
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                        ),
+                        onChanged: (_) => _syncFromPct(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _descValor,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Desconto R\$',
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                        ),
+                        onChanged: (_) => _syncFromValor(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Total do item: ${brMoney(_bruto - _desconto)}',
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _confirmar,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Incluir item'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Brand.green,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

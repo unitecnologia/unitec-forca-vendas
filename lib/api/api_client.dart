@@ -197,12 +197,18 @@ class ApiClient {
     return data;
   }
 
-  Future<Map<String, dynamic>> push(List<Map<String, dynamic>> orders) async {
+  Future<Map<String, dynamic>> push(
+    List<Map<String, dynamic>> orders, {
+    List<Map<String, dynamic>> visitasSemVenda = const [],
+  }) async {
     final r = await _http
         .post(
           _uri('sync/push'),
           headers: _headers(auth: true),
-          body: jsonEncode({'orders': orders}),
+          body: jsonEncode({
+            'orders': orders,
+            'visitas_sem_venda': visitasSemVenda,
+          }),
         )
         .timeout(const Duration(seconds: 30));
     return _decode(r);
@@ -244,6 +250,16 @@ class ApiClient {
         .post(_uri('pix/$cobrancaId/cancelar'), headers: _headers(auth: true))
         .timeout(timeout);
     return _decode(r);
+  }
+
+  /// Consulta CNPJ no ERP (mesma base do cadastro de pessoas) e retorna os campos preenchíveis.
+  Future<Map<String, dynamic>> lookupCnpj(String cnpjDigits) async {
+    final digits = cnpjDigits.replaceAll(RegExp(r'\D'), '');
+    final r = await _http
+        .get(_uri('cnpj/$digits'), headers: _headers(auth: true))
+        .timeout(const Duration(seconds: 30));
+    final data = _decode(r);
+    return (data['data'] as Map<String, dynamic>? ?? {});
   }
 
   Map<String, dynamic> _decode(http.Response r) {

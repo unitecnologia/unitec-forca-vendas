@@ -172,10 +172,15 @@ class SyncService extends ChangeNotifier {
         });
     if (fullPull) {
       await _db.deleteAll('historico_vendas');
+      await _db.deleteAll('historico_orcamentos');
     }
     await _db.upsertAll('historico_vendas', data['historico_vendas'] ?? [], (r) => {
           'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
           'total': _d(r['total']), 'status': r['status'], 'tipo': r['tipo'],
+        });
+    await _db.upsertAll('historico_orcamentos', data['historico_orcamentos'] ?? [], (r) => {
+          'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
+          'total': _d(r['total']), 'status': r['status'],
         });
 
     if (data['_etag'] != null) {
@@ -185,7 +190,9 @@ class SyncService extends ChangeNotifier {
 
   Future<void> _push() async {
     final pending = await _db.pendingOrders();
-    if (pending.isEmpty) return;
+    final visitasPendentes = await _db.pendingVisitasSemVenda();
+
+    if (pending.isEmpty && visitasPendentes.isEmpty) return;
 
     final orders = pending.map((o) {
       final itens = (o['itens_json'] as String?) ?? '[]';
@@ -214,7 +221,23 @@ class SyncService extends ChangeNotifier {
     }).toList();
 
     AppLog.instance.info('sync', 'Enviando ${orders.length} pedido(s)...');
-    final resp = await api.push(orders);
+    final visitas = visitasPendentes
+        .map((v) => <String, dynamic>{
+              'uuid': v['uuid'],
+              'cliente_id': v['cliente_id'],
+              'motivo': v['motivo'],
+              'latitude': v['latitude'],
+              'longitude': v['longitude'],
+              'created_at': v['created_at'],
+              'device_uuid': config.deviceUuid,
+            })
+        .toList();
+
+    if (visitas.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${visitas.length} visita(s) sem venda...');
+    }
+
+    final resp = await api.push(orders, visitasSemVenda: visitas);
     final results = (resp['results'] as List<dynamic>? ?? []);
     var enviados = 0;
     var comErro = 0;
@@ -232,8 +255,29 @@ class SyncService extends ChangeNotifier {
     }
     if (comErro > 0) {
       AppLog.instance.warn('sync', 'Pedidos: $enviados enviado(s), $comErro com erro');
-    } else {
+    } else if (enviados > 0) {
       AppLog.instance.ok('sync', 'Pedidos: $enviados enviado(s)');
+    }
+
+    final visitaResults = (resp['visita_results'] as List<dynamic>? ?? []);
+    var visitasOk = 0;
+    var visitasErro = 0;
+    for (final res in visitaResults) {
+      final m = Map<String, dynamic>.from(res as Map);
+      final uuid = m['uuid']?.toString();
+      if (uuid == null) continue;
+      if (m['status'] == 'importado') {
+        await _db.markVisitaSemVenda(uuid, 'enviado');
+        visitasOk++;
+      } else if (m['status'] == 'erro') {
+        await _db.markVisitaSemVenda(uuid, 'erro', erro: m['erro']?.toString());
+        visitasErro++;
+      }
+    }
+    if (visitasErro > 0) {
+      AppLog.instance.warn('sync', 'Visitas: $visitasOk enviada(s), $visitasErro com erro');
+    } else if (visitasOk > 0) {
+      AppLog.instance.ok('sync', 'Visitas: $visitasOk enviada(s)');
     }
   }
 
