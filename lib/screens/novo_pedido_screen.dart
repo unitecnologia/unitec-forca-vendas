@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
+import '../ui/estoque_chips.dart';
 import '../ui/format.dart';
 import 'pedidos_screen.dart';
 import 'pix_qr_screen.dart';
@@ -1874,10 +1875,13 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
-                        'Cód. ${r['codigo'] ?? ''}  •  ${estoqueLinhaCompacta(r)}',
-                        style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                      'Cód. ${r['codigo'] ?? ''}',
+                      style: const TextStyle(color: Colors.black54, fontSize: 11.5),
+                    ),
+                    const SizedBox(height: 6),
+                    EstoqueChips(produto: r, compact: true),
                   ],
                 ),
               ),

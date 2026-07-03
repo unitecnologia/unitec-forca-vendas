@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
+import '../ui/estoque_chips.dart';
 import '../ui/format.dart';
 
 /// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.
@@ -105,18 +106,32 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     final base = context.read<AppState>().config.baseUrl;
     return Scaffold(
       backgroundColor: Brand.bg,
-      appBar: AppBar(title: const Text('Produtos'), backgroundColor: Brand.blue, foregroundColor: Colors.white),
+      appBar: AppBar(
+        title: const Text('Produtos'),
+        backgroundColor: Brand.blue,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: const BoxDecoration(
+              color: Brand.blue,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+            ),
             child: TextField(
               decoration: InputDecoration(
                 hintText: 'Buscar por descrição, código ou marca',
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search, color: Brand.blue),
                 filled: true,
                 fillColor: Colors.white,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
               ),
               onChanged: (s) {
                 _termo = s;
@@ -131,10 +146,14 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
           else
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
                 itemCount: _rows.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (_, i) => _ProdutoCard(p: _rows[i], base: base, onTap: () => _detalhe(_rows[i])),
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _ProdutoCard(
+                  p: _rows[i],
+                  base: base,
+                  onTap: () => _detalhe(_rows[i]),
+                ),
               ),
             ),
         ],
@@ -160,6 +179,17 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               if (fotoUrl != null)
                 Center(
                   child: GestureDetector(
@@ -183,17 +213,18 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               if (fotoUrl != null) const SizedBox(height: 14),
               Text(descricao,
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text('Cód. ${p['codigo'] ?? ''}  •  ${p['marca'] ?? ''}',
                   style: const TextStyle(color: Colors.black54)),
-              const Divider(height: 24),
+              const SizedBox(height: 16),
+              EstoquePainel(produto: p),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
               _linha('Preço à vista', brMoney(p['preco_venda'] as num?)),
               _linha('Preço a prazo', brMoney(p['preco_venda_prazo'] as num?)),
               _linha('Preço atacado', brMoney(p['preco_atacado'] as num?)),
               if (promo > 0) _linha('Promoção', brMoney(promo), destaque: true),
-              _linha('Est. atual', '${fmtEstoque(estoqueAtual(p))} ${p['unidade'] ?? ''}'),
-              _linha('Est. reserv.', '${fmtEstoque(estoqueReservado(p))} ${p['unidade'] ?? ''}'),
-              _linha('Est. disp.', '${fmtEstoque(estoqueDisponivel(p))} ${p['unidade'] ?? ''}'),
             ],
           ),
         ),
@@ -230,24 +261,88 @@ class _ProdutoCard extends StatelessWidget {
     final preco = (p['preco_venda'] as num?)?.toDouble() ?? 0;
     final fotoUrl = _fotoFullUrl(base, p['foto_url']);
     final descricao = (p['descricao'] ?? '').toString();
+    final codigo = (p['codigo'] ?? '').toString();
+
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: GestureDetector(
-          onTap: fotoUrl != null ? () => _abrirFoto(context, fotoUrl, descricao) : null,
-          child: _Miniatura(url: fotoUrl),
-        ),
-        title: Text(descricao, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-          'Cód. ${p['codigo'] ?? ''}  •  ${estoqueLinhaCompacta(p)}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: Text(brMoney(preco),
-            style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
+      elevation: 1,
+      shadowColor: const Color(0xFF0F2847).withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: fotoUrl != null ? () => _abrirFoto(context, fotoUrl, descricao) : null,
+                child: _Miniatura(url: fotoUrl),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            descricao,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              height: 1.25,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Brand.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            brMoney(preco),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                              color: Brand.blue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Cód. $codigo',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    EstoqueChips(produto: p, compact: true),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -260,21 +355,22 @@ class _Miniatura extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double size = 48;
+    const double size = 56;
     final placeholder = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: Brand.green.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
+        color: Brand.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Brand.green.withValues(alpha: 0.2)),
       ),
-      child: const Icon(Icons.inventory_2_outlined, color: Brand.green),
+      child: const Icon(Icons.inventory_2_outlined, color: Brand.green, size: 26),
     );
 
     if (url == null) return placeholder;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: Image.network(
         url!,
         width: size,
@@ -287,7 +383,7 @@ class _Miniatura extends StatelessWidget {
             width: size,
             height: size,
             child: const Center(
-              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
             ),
           );
         },
