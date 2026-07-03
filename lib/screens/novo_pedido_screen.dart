@@ -272,7 +272,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AdicionarItemSheet(
+      builder: (_) => _ItemFormSheet(
         descricao: (produto['descricao'] ?? '').toString(),
         precoUnitario: preco,
         productId: produto['id'] as int,
@@ -282,6 +282,31 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
     setState(() {
       _itens.insert(0, item);
+      _recalcDescontoDePct();
+    });
+  }
+
+  Future<void> _editarItem(int indice) async {
+    final item = _itens[indice];
+    final atualizado = await showModalBottomSheet<_ItemPedido>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ItemFormSheet(
+        productId: item.productId,
+        descricao: item.descricao,
+        precoUnitario: item.precoUnitario,
+        quantidadeInicial: item.quantidade,
+        descontoPctInicial: item.descontoPercentualExibicao,
+        descontoValorInicial: item.descontoValorExibicao,
+        confirmLabel: 'Salvar alterações',
+      ),
+    );
+    if (atualizado == null || !mounted) return;
+
+    setState(() {
+      _itens[indice] = atualizado;
       _recalcDescontoDePct();
     });
   }
@@ -692,17 +717,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     ],
                   ),
                 )
-              : ListView.builder(
+              : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   itemCount: _itens.length,
-                  itemBuilder: (_, i) => _ItemTile(
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (_, i) => _ItemListaTile(
                     key: ValueKey('item-$i-${_itens[i].productId}-${_itens[i].quantidade}'),
                     indice: i + 1,
                     item: _itens[i],
-                    onChanged: () {
-                      _recalcDescontoDePct();
-                      setState(() {});
-                    },
+                    onTap: () => _editarItem(i),
                     onRemove: () {
                       setState(() => _itens.removeAt(i));
                       _recalcDescontoDePct();
@@ -1259,264 +1282,98 @@ class _TabContent extends StatelessWidget {
   }
 }
 
-class _ItemTile extends StatefulWidget {
-  const _ItemTile({
+class _ItemListaTile extends StatelessWidget {
+  const _ItemListaTile({
     super.key,
     required this.indice,
     required this.item,
-    required this.onChanged,
+    required this.onTap,
     required this.onRemove,
   });
 
   final int indice;
   final _ItemPedido item;
-  final VoidCallback onChanged;
+  final VoidCallback onTap;
   final VoidCallback onRemove;
-
-  @override
-  State<_ItemTile> createState() => _ItemTileState();
-}
-
-class _ItemTileState extends State<_ItemTile> {
-  late final TextEditingController _qtd;
-  late final TextEditingController _descPct;
-  late final TextEditingController _descValor;
-  bool _sincDesc = false;
-
-  _ItemPedido get item => widget.item;
-
-  @override
-  void initState() {
-    super.initState();
-    _qtd = TextEditingController(text: _fmtQtd(item.quantidade));
-    _descPct = TextEditingController(text: _fmtNum(item.descontoPercentualExibicao));
-    _descValor = TextEditingController(text: _fmtNum(item.descontoValorExibicao));
-  }
-
-  @override
-  void didUpdateWidget(covariant _ItemTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item != item) {
-      _qtd.text = _fmtQtd(item.quantidade);
-      _descPct.text = _fmtNum(item.descontoPercentualExibicao);
-      _descValor.text = _fmtNum(item.descontoValorExibicao);
-    }
-  }
-
-  @override
-  void dispose() {
-    _qtd.dispose();
-    _descPct.dispose();
-    _descValor.dispose();
-    super.dispose();
-  }
-
-  double _parseNum(String s) =>
-      double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
-
-  String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
   String _fmtQtd(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll('.', ',');
 
-  void _syncDescFromPct() {
-    if (_sincDesc) return;
-    _sincDesc = true;
-    item.aplicarDescontoPercentual(_parseNum(_descPct.text));
-    _descValor.text = _fmtNum(item.descontoValorExibicao);
-    _sincDesc = false;
-    widget.onChanged();
-    setState(() {});
-  }
-
-  void _syncDescFromValor() {
-    if (_sincDesc) return;
-    _sincDesc = true;
-    item.aplicarDescontoValor(_parseNum(_descValor.text));
-    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
-    _sincDesc = false;
-    widget.onChanged();
-    setState(() {});
-  }
-
-  void _alterarQtd(double delta) {
-    final nova = (item.quantidade + delta).clamp(0.001, 999999.0).toDouble();
-    item.quantidade = nova;
-    _qtd.text = _fmtQtd(nova);
-    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
-    _descValor.text = _fmtNum(item.descontoValorExibicao);
-    widget.onChanged();
-    setState(() {});
-  }
-
-  void _aplicarQtd(String s) {
-    final v = _parseNum(s);
-    if (v <= 0) return;
-    item.quantidade = v;
-    _descPct.text = _fmtNum(item.descontoPercentualExibicao);
-    _descValor.text = _fmtNum(item.descontoValorExibicao);
-    widget.onChanged();
-    setState(() {});
-  }
-
-  InputDecoration _dec(String label, {String? suffix, bool readOnly = false}) {
-    return InputDecoration(
-      labelText: label,
-      suffixText: suffix,
-      isDense: true,
-      filled: true,
-      fillColor: readOnly ? const Color(0xFFF1F5F9) : Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: readOnly ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Brand.blue.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(color: Brand.blue.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Brand.blue.withValues(alpha: 0.18), Brand.blue.withValues(alpha: 0.08)],
-                    ),
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: Text('${widget.indice}',
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 11)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(item.descricao,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.15)),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                  color: Colors.redAccent,
-                  onPressed: widget.onRemove,
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  flex: 5,
-                  child: Row(
-                    children: [
-                      _qtdBtn(Icons.remove_rounded, () => _alterarQtd(-1)),
-                      Expanded(
-                        child: TextField(
-                          controller: _qtd,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: _dec('Qtd'),
-                          onSubmitted: _aplicarQtd,
-                          onEditingComplete: () => _aplicarQtd(_qtd.text),
-                        ),
-                      ),
-                      _qtdBtn(Icons.add_rounded, () => _alterarQtd(1)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  flex: 4,
-                  child: InputDecorator(
-                    decoration: _dec('Preço', readOnly: true),
-                    child: Text(
-                      brMoney(item.precoUnitario),
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _descPct,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(fontSize: 13),
-                    decoration: _dec('Desc. %', suffix: '%'),
-                    onChanged: (_) => _syncDescFromPct(),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: TextField(
-                    controller: _descValor,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(fontSize: 13),
-                    decoration: _dec('Desc. R\$', suffix: 'R\$'),
-                    onChanged: (_) => _syncDescFromValor(),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Bruto: ${brMoney(item.bruto)}',
-                    style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
-                Text('Total: ${brMoney(item.total)}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Brand.green)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final temDesconto = item.desconto > 0;
 
-  Widget _qtdBtn(IconData icon, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: Material(
-        color: Brand.blue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(7),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(7),
-          child: SizedBox(
-            width: 30,
-            height: 36,
-            child: Icon(icon, size: 16, color: Brand.blue),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Brand.blue.withValues(alpha: 0.12)),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Brand.blue.withValues(alpha: 0.18), Brand.blue.withValues(alpha: 0.08)],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('$indice',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 11)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.descricao,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.2)),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${_fmtQtd(item.quantidade)} × ${brMoney(item.precoUnitario)}'
+                      '${temDesconto ? '  •  desc. ${brMoney(item.desconto)}' : ''}',
+                      style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(brMoney(item.total),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Brand.green)),
+                  if (temDesconto)
+                    Text(brMoney(item.bruto),
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.black.withValues(alpha: 0.35),
+                            decoration: TextDecoration.lineThrough)),
+                ],
+              ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: Colors.black.withValues(alpha: 0.25)),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                color: Colors.redAccent,
+                onPressed: onRemove,
+              ),
+            ],
           ),
         ),
       ),
@@ -1524,26 +1381,47 @@ class _ItemTileState extends State<_ItemTile> {
   }
 }
 
-class _AdicionarItemSheet extends StatefulWidget {
-  const _AdicionarItemSheet({
+class _ItemFormSheet extends StatefulWidget {
+  const _ItemFormSheet({
     required this.productId,
     required this.descricao,
     required this.precoUnitario,
+    this.quantidadeInicial = 1,
+    this.descontoPctInicial = 0,
+    this.descontoValorInicial = 0,
+    this.confirmLabel = 'Incluir item',
   });
 
   final int productId;
   final String descricao;
   final double precoUnitario;
+  final double quantidadeInicial;
+  final double descontoPctInicial;
+  final double descontoValorInicial;
+  final String confirmLabel;
 
   @override
-  State<_AdicionarItemSheet> createState() => _AdicionarItemSheetState();
+  State<_ItemFormSheet> createState() => _ItemFormSheetState();
 }
 
-class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
-  final _qtd = TextEditingController(text: '1');
-  final _descPct = TextEditingController(text: '0,00');
-  final _descValor = TextEditingController(text: '0,00');
+class _ItemFormSheetState extends State<_ItemFormSheet> {
+  late final TextEditingController _qtd;
+  late final TextEditingController _descPct;
+  late final TextEditingController _descValor;
   bool _sincDesc = false;
+
+  String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
+
+  String _fmtQtd(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll('.', ',');
+
+  @override
+  void initState() {
+    super.initState();
+    _qtd = TextEditingController(text: _fmtQtd(widget.quantidadeInicial));
+    _descPct = TextEditingController(text: _fmtNum(widget.descontoPctInicial));
+    _descValor = TextEditingController(text: _fmtNum(widget.descontoValorInicial));
+  }
 
   @override
   void dispose() {
@@ -1555,8 +1433,6 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
 
   double _parseNum(String s) =>
       double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
-
-  String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
   double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0).toDouble();
 
@@ -1589,9 +1465,7 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
 
   void _alterarQtd(double delta) {
     final nova = (_parseNum(_qtd.text) + delta).clamp(0.001, 999999.0).toDouble();
-    _qtd.text = nova == nova.roundToDouble()
-        ? nova.toStringAsFixed(0)
-        : nova.toStringAsFixed(2).replaceAll('.', ',');
+    _qtd.text = _fmtQtd(nova);
     _syncFromPct();
     setState(() {});
   }
@@ -1775,7 +1649,7 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
                 FilledButton.icon(
                   onPressed: _confirmar,
                   icon: const Icon(Icons.check_rounded),
-                  label: const Text('Incluir item'),
+                  label: Text(widget.confirmLabel),
                   style: FilledButton.styleFrom(
                     backgroundColor: Brand.green,
                     minimumSize: const Size.fromHeight(48),
