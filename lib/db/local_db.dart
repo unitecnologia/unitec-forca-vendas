@@ -212,9 +212,11 @@ class LocalDb {
 
   Future<int> pendingCount() async {
     final database = await db;
-    final r = await database
+    final orders = await database
         .rawQuery("SELECT COUNT(*) c FROM outbox_orders WHERE status = 'pendente'");
-    return (r.first['c'] as int?) ?? 0;
+    final customers = await database
+        .rawQuery("SELECT COUNT(*) c FROM outbox_customers WHERE status = 'pendente'");
+    return ((orders.first['c'] as int?) ?? 0) + ((customers.first['c'] as int?) ?? 0);
   }
 
   // ---- Clientes (cadastro local + fila p/ ERP) ---------------------------
@@ -250,6 +252,30 @@ class LocalDb {
       where: 'uuid = ?',
       whereArgs: [uuid],
     );
+  }
+
+  /// Substitui o id local negativo pelo id real do ERP e atualiza pedidos/visitas pendentes.
+  Future<void> remapCustomerId(int localId, int serverId, Map<String, dynamic> row) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('customers', where: 'id = ?', whereArgs: [localId]);
+      final mapped = Map<String, dynamic>.from(row);
+      mapped['id'] = serverId;
+      await txn.insert('customers', mapped, conflictAlgorithm: ConflictAlgorithm.replace);
+
+      await txn.update(
+        'outbox_orders',
+        {'cliente_id': serverId, 'status': 'pendente', 'erro': null},
+        where: 'cliente_id = ?',
+        whereArgs: [localId],
+      );
+      await txn.update(
+        'visitas_sem_venda',
+        {'cliente_id': serverId, 'status': 'pendente', 'erro': null},
+        where: 'cliente_id = ?',
+        whereArgs: [localId],
+      );
+    });
   }
 
   // ---- Visitas sem venda -------------------------------------------------

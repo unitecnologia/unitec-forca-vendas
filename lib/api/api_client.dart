@@ -199,6 +199,7 @@ class ApiClient {
 
   Future<Map<String, dynamic>> push(
     List<Map<String, dynamic>> orders, {
+    List<Map<String, dynamic>> customers = const [],
     List<Map<String, dynamic>> visitasSemVenda = const [],
   }) async {
     final r = await _http
@@ -206,6 +207,7 @@ class ApiClient {
           _uri('sync/push'),
           headers: _headers(auth: true),
           body: jsonEncode({
+            'customers': customers,
             'orders': orders,
             'visitas_sem_venda': visitasSemVenda,
           }),

@@ -189,12 +189,41 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _push() async {
+    final pendingCustomers = await _db.pendingCustomers();
     final pending = await _db.pendingOrders();
     final visitasPendentes = await _db.pendingVisitasSemVenda();
 
-    if (pending.isEmpty && visitasPendentes.isEmpty) return;
+    if (pendingCustomers.isEmpty && pending.isEmpty && visitasPendentes.isEmpty) return;
 
-    final orders = pending.map((o) {
+    final customers = pendingCustomers.map((c) {
+      final payload = _parseMap((c['payload_json'] as String?) ?? '');
+      return <String, dynamic>{
+        'uuid': c['uuid'],
+        'local_id': c['local_id'],
+        'device_uuid': config.deviceUuid,
+        ...payload,
+      };
+    }).toList();
+
+    if (customers.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${customers.length} cliente(s)...');
+    }
+
+    if (visitas.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${visitas.length} visita(s) sem venda...');
+    }
+
+    if (customers.isNotEmpty) {
+      final customerResp = await api.push([], customers: customers);
+      await _applyCustomerResults(customerResp, pendingCustomers);
+    }
+
+    final ordersAfterCustomers = await _db.pendingOrders();
+    final visitasAfterCustomers = await _db.pendingVisitasSemVenda();
+
+    if (ordersAfterCustomers.isEmpty && visitasAfterCustomers.isEmpty) return;
+
+    final ordersPayload = ordersAfterCustomers.map((o) {
       final itens = (o['itens_json'] as String?) ?? '[]';
       final extra = _parseMap((o['extra_json'] as String?) ?? '');
       return <String, dynamic>{
@@ -220,8 +249,7 @@ class SyncService extends ChangeNotifier {
       };
     }).toList();
 
-    AppLog.instance.info('sync', 'Enviando ${orders.length} pedido(s)...');
-    final visitas = visitasPendentes
+    final visitasPayload = visitasAfterCustomers
         .map((v) => <String, dynamic>{
               'uuid': v['uuid'],
               'cliente_id': v['cliente_id'],
@@ -233,11 +261,11 @@ class SyncService extends ChangeNotifier {
             })
         .toList();
 
-    if (visitas.isNotEmpty) {
-      AppLog.instance.info('sync', 'Enviando ${visitas.length} visita(s) sem venda...');
+    if (ordersPayload.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${ordersPayload.length} pedido(s)...');
     }
 
-    final resp = await api.push(orders, visitasSemVenda: visitas);
+    final resp = await api.push(ordersPayload, visitasSemVenda: visitasPayload);
     final results = (resp['results'] as List<dynamic>? ?? []);
     var enviados = 0;
     var comErro = 0;
@@ -278,6 +306,52 @@ class SyncService extends ChangeNotifier {
       AppLog.instance.warn('sync', 'Visitas: $visitasOk enviada(s), $visitasErro com erro');
     } else if (visitasOk > 0) {
       AppLog.instance.ok('sync', 'Visitas: $visitasOk enviada(s)');
+    }
+  }
+
+  Future<void> _applyCustomerResults(
+    Map<String, dynamic> resp,
+    List<Map<String, dynamic>> pendingCustomers,
+  ) async {
+    final customerResults = (resp['customer_results'] as List<dynamic>? ?? []);
+    var clientesOk = 0;
+    var clientesErro = 0;
+
+    for (final res in customerResults) {
+      final m = Map<String, dynamic>.from(res as Map);
+      final uuid = m['uuid']?.toString();
+      if (uuid == null) continue;
+
+      if (m['status'] == 'importado') {
+        final serverId = (m['person_id'] as num?)?.toInt();
+        final localId = (m['local_id'] as num?)?.toInt();
+        if (serverId != null && localId != null) {
+          Map<String, dynamic>? outbox;
+          for (final c in pendingCustomers) {
+            if (c['uuid'] == uuid) {
+              outbox = c;
+              break;
+            }
+          }
+          if (outbox != null) {
+            final payload = _parseMap((outbox['payload_json'] as String?) ?? '');
+            final row = Map<String, dynamic>.from(payload)
+              ..['codigo'] = m['codigo']?.toString() ?? payload['codigo'] ?? '';
+            await _db.remapCustomerId(localId, serverId, row);
+          }
+        }
+        await _db.markCustomer(uuid, 'enviado', serverId: serverId);
+        clientesOk++;
+      } else if (m['status'] == 'erro') {
+        await _db.markCustomer(uuid, 'erro', erro: m['erro']?.toString());
+        clientesErro++;
+      }
+    }
+
+    if (clientesErro > 0) {
+      AppLog.instance.warn('sync', 'Clientes: $clientesOk enviado(s), $clientesErro com erro');
+    } else if (clientesOk > 0) {
+      AppLog.instance.ok('sync', 'Clientes: $clientesOk enviado(s)');
     }
   }
 
