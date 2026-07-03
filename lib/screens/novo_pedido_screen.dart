@@ -1876,12 +1876,19 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
                     const SizedBox(height: 4),
-                    Text(
-                      'Cód. ${r['codigo'] ?? ''}',
-                      style: const TextStyle(color: Colors.black54, fontSize: 11.5),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Cód. ${r['codigo'] ?? ''}',
+                          style: const TextStyle(color: Colors.black54, fontSize: 11.5),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: EstoqueChips(produto: r, compact: true),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    EstoqueChips(produto: r, compact: true),
                   ],
                 ),
               ),
