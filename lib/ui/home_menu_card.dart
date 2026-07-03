@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'brand.dart';
 
-/// Card do menu principal com ícone em estilo 3D e cantos bem arredondados.
+/// Card do menu principal — estilo flat (Material 3), sem gradientes nos tiles.
 class HomeMenuCard extends StatelessWidget {
   const HomeMenuCard({
     super.key,
@@ -25,96 +25,197 @@ class HomeMenuCard extends StatelessWidget {
   final bool novo;
   final String? badge;
 
-  static const _radius = 22.0;
+  static const _radius = 16.0;
 
   @override
   Widget build(BuildContext context) {
-    final opacity = emDesenvolvimento ? 0.62 : 1.0;
-    final cardTop = Color.lerp(const Color(0xFFF7FAFC), color, destaque ? 0.16 : 0.11)!;
-    final cardBottom = Color.lerp(const Color(0xFFE8EEF4), color, destaque ? 0.24 : 0.17)!;
+    final opacity = emDesenvolvimento ? 0.55 : 1.0;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
+    if (destaque) {
+      return _PrimaryMenuCard(
+        label: label,
+        icon: icon,
+        onTap: onTap,
+        opacity: opacity,
+        badge: badge,
+        emDesenvolvimento: emDesenvolvimento,
+      );
+    }
+
+    return Opacity(
+      opacity: opacity,
+      child: Material(
+        color: Colors.white,
+        elevation: 0,
+        shadowColor: Colors.transparent,
         borderRadius: BorderRadius.circular(_radius),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: destaque ? 0.22 : 0.14),
-            blurRadius: destaque ? 14 : 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_radius),
-        clipBehavior: Clip.antiAlias,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            splashColor: color.withValues(alpha: 0.14),
-            highlightColor: color.withValues(alpha: 0.07),
-            child: Ink(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [cardTop, cardBottom],
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(_radius),
+          splashColor: color.withValues(alpha: 0.08),
+          highlightColor: color.withValues(alpha: 0.04),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0F0F2847),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
                 ),
-                border: Border.all(
-                  color: color.withValues(alpha: destaque ? 0.32 : 0.18),
-                  width: destaque ? 1.3 : 1,
-                ),
-              ),
-              child: Opacity(
-                opacity: opacity,
-                child: Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          HomeMenuIcon3D(icon: icon, color: color),
-                          const Spacer(),
-                          Text(
-                            label,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: destaque ? FontWeight.w700 : FontWeight.w600,
-                              color: const Color(0xFF1A237E).withValues(alpha: 0.92),
-                              height: 1.15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (novo)
-                      const Positioned(top: 8, right: 8, child: _HomeMenuTag(text: 'Novo', color: Brand.green)),
-                    if (badge != null)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: _HomeMenuTag(text: badge!, color: Colors.redAccent),
-                      ),
-                    if (emDesenvolvimento)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(Icons.construction_rounded, size: 14, color: Colors.orange.shade800),
+              ],
+            ),
+            child: Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      HomeMenuIconFlat(icon: icon, color: color),
+                      const Spacer(),
+                      Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                          height: 1.2,
                         ),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
+                ..._badges(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _badges() {
+    if (novo) {
+      return [const Positioned(top: 10, right: 10, child: _HomeMenuTag(text: 'Novo', color: Brand.green))];
+    }
+    if (badge != null) {
+      return [Positioned(top: 10, right: 10, child: _HomeMenuTag(text: badge!, color: const Color(0xFFDC2626)))];
+    }
+    if (emDesenvolvimento) {
+      return [
+        Positioned(
+          top: 10,
+          right: 10,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFDBA74)),
+            ),
+            child: const Text(
+              'Em breve',
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF9A3412)),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [];
+  }
+}
+
+class _PrimaryMenuCard extends StatelessWidget {
+  const _PrimaryMenuCard({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.opacity,
+    this.badge,
+    this.emDesenvolvimento = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final double opacity;
+  final String? badge;
+  final bool emDesenvolvimento;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: opacity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1E5A9E), Color(0xFF0F2847)],
               ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x400F2847),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 24),
+                      ),
+                      const Spacer(),
+                      Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (badge != null)
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: _HomeMenuTag(text: badge!, color: const Color(0xFFDC2626)),
+                  ),
+                if (emDesenvolvimento)
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: _HomeMenuTag(text: 'Em breve', color: Color(0xFFEA580C)),
+                  ),
+              ],
             ),
           ),
         ),
@@ -123,6 +224,29 @@ class HomeMenuCard extends StatelessWidget {
   }
 }
 
+/// Ícone plano em círculo suave — sem efeito 3D/glossy.
+class HomeMenuIconFlat extends StatelessWidget {
+  const HomeMenuIconFlat({super.key, required this.icon, required this.color, this.size = 44});
+
+  final IconData icon;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: color, size: size * 0.52),
+    );
+  }
+}
+
+/// Mantido para compatibilidade — delega ao ícone flat.
 class HomeMenuIcon3D extends StatelessWidget {
   const HomeMenuIcon3D({super.key, required this.icon, required this.color, this.size = 46});
 
@@ -132,65 +256,7 @@ class HomeMenuIcon3D extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final light = Color.lerp(color, Colors.white, 0.42)!;
-    final mid = color;
-    final dark = Color.lerp(color, Colors.black, 0.18)!;
-    final radius = size * 0.32;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [light, mid, dark],
-            stops: const [0.0, 0.55, 1.0],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.35),
-              blurRadius: size * 0.16,
-              offset: Offset(0, size * 0.08),
-            ),
-          ],
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              top: size * 0.14,
-              left: size * 0.18,
-              right: size * 0.18,
-              child: Container(
-                height: size * 0.16,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(radius),
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.white.withValues(alpha: 0.42),
-                      Colors.white.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Icon(
-              icon,
-              color: Colors.white,
-              size: size * 0.5,
-              shadows: const [
-                Shadow(color: Color(0x55000000), blurRadius: 3, offset: Offset(0, 1.5)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+    return HomeMenuIconFlat(icon: icon, color: color, size: size);
   }
 }
 
@@ -202,20 +268,15 @@ class _HomeMenuTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color.lerp(color, Colors.white, 0.2)!, color],
-          ),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
       ),
     );
   }

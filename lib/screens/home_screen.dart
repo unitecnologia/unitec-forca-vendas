@@ -71,45 +71,37 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.read<AppState>();
 
     final itens = <_MenuItem>[
-      _MenuItem('Pedido/Orçamento', Icons.note_add_rounded, Brand.green,
+      _MenuItem('Pedido/Orçamento', Icons.note_add_rounded, Brand.blue,
           onTap: () => _abrir(const NovoPedidoScreen(tipoInicial: 'pedido')), destaque: true),
-      _MenuItem('Orçamentos', Icons.request_quote_rounded, Brand.blue,
+      _MenuItem('Orçamentos', Icons.request_quote_rounded, const Color(0xFF6366F1),
           onTap: () => _abrir(const PedidosScreen(tipoFiltro: 'orcamento'))),
-      _MenuItem('Rotas', Icons.alt_route_rounded, Brand.blue,
+      _MenuItem('Rotas', Icons.alt_route_rounded, const Color(0xFF0891B2),
           onTap: () => _emDesenvolvimento('Rotas'), emDesenvolvimento: true),
       _MenuItem('Pedidos', Icons.fact_check_rounded, Brand.blue,
           onTap: () => _abrir(const PedidosScreen()), badge: _pendentes > 0 ? '$_pendentes' : null),
-      _MenuItem('Clientes', Icons.people_alt_rounded, Brand.green,
+      _MenuItem('Clientes', Icons.people_alt_rounded, const Color(0xFF0D9488),
           onTap: () => _abrir(const ClientesScreen())),
-      _MenuItem('Produtos', Icons.inventory_2_rounded, Brand.blue,
+      _MenuItem('Produtos', Icons.inventory_2_rounded, const Color(0xFF2563EB),
           onTap: () => _abrir(const ProdutosScreen())),
-      _MenuItem('Visitas sem Venda', Icons.location_off_rounded, Brand.green,
+      _MenuItem('Visitas sem Venda', Icons.location_off_rounded, const Color(0xFF64748B),
           onTap: () => _abrir(const VisitasSemVendaScreen())),
-      _MenuItem('Dashboard', Icons.insights_rounded, Brand.blue,
+      _MenuItem('Dashboard', Icons.insights_rounded, const Color(0xFF7C3AED),
           onTap: () => _abrir(const DashboardScreen())),
-      _MenuItem('Títulos', Icons.payments_rounded, Brand.green,
+      _MenuItem('Títulos', Icons.payments_rounded, const Color(0xFF059669),
           onTap: () => _abrir(const TitulosScreen())),
-      _MenuItem('Relatórios', Icons.bar_chart_rounded, Brand.blue,
+      _MenuItem('Relatórios', Icons.bar_chart_rounded, const Color(0xFF475569),
           onTap: () => _emDesenvolvimento('Relatórios'), emDesenvolvimento: true),
-      _MenuItem('Sincronizar', Icons.sync_rounded, Brand.green, onTap: () async {
+      _MenuItem('Sincronizar', Icons.sync_rounded, Brand.blue, onTap: () async {
         await state.sync.syncNow();
         await _atualizarContadores();
       }),
-      _MenuItem('Sair', Icons.logout_rounded, const Color(0xFFD32F2F),
+      _MenuItem('Sair', Icons.logout_rounded, const Color(0xFFDC2626),
           onTap: () => _confirmarSair(state)),
     ];
 
     return Scaffold(
-      backgroundColor: Brand.bg,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFE3ECF5), Color(0xFFF1F4F8), Color(0xFFE8EEF5)],
-          ),
-        ),
-        child: RefreshIndicator(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: RefreshIndicator(
           onRefresh: () async {
             await state.sync.syncNow();
             await _atualizarContadores();
@@ -206,38 +198,26 @@ class _Header extends StatelessWidget {
 
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Brand.blue, Brand.green],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        color: Brand.blue,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
       ),
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 18),
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 16),
           child: Row(
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Colors.white, Color(0xFFE3F2FD)],
-                  ),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x40000000), blurRadius: 10, offset: Offset(0, 4)),
-                    BoxShadow(color: Color(0x66FFFFFF), blurRadius: 2, offset: Offset(-1, -1)),
-                  ],
+                  color: Colors.white,
                 ),
                 alignment: Alignment.center,
                 child: const Text('U',
                     style: TextStyle(
-                        color: Brand.blue, fontSize: 30, fontWeight: FontWeight.w800)),
+                        color: Brand.blue, fontSize: 26, fontWeight: FontWeight.w800)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -317,28 +297,18 @@ class _MiniStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         decoration: BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color.lerp(Colors.white, color, 0.08)!,
-              Color.lerp(const Color(0xFFEEF2F7), color, 0.14)!,
-            ],
-          ),
-          border: Border.all(color: color.withValues(alpha: 0.18)),
-          boxShadow: [
-            BoxShadow(color: color.withValues(alpha: 0.18), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Column(
           children: [
-            HomeMenuIcon3D(icon: icon, color: color, size: 36),
+            HomeMenuIconFlat(icon: icon, color: color, size: 36),
             const SizedBox(height: 6),
-            Text('$value', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            Text('$value', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF1E293B))),
+            Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -369,23 +339,33 @@ class _SyncCard extends StatelessWidget {
             : '—';
         return Container(
           decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            gradient: LinearGradient(
-              colors: [
-                Color.lerp(Colors.white, color, 0.06)!,
-                Color.lerp(const Color(0xFFEEF2F7), color, 0.12)!,
-              ],
-            ),
-            border: Border.all(color: color.withValues(alpha: 0.2)),
-            boxShadow: [
-              BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 4)),
-            ],
+            border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
           child: ListTile(
-            leading: HomeMenuIcon3D(icon: Icons.sync_rounded, color: color, size: 40),
-            title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('Última sincronização: $last'),
-            trailing: IconButton(icon: const Icon(Icons.refresh), onPressed: onSync),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: sync.status == SyncStatus.syncing
+                  ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: color),
+                    )
+                  : Icon(Icons.sync_rounded, color: color, size: 22),
+            ),
+            title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            subtitle: Text('Última sincronização: $last',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            trailing: IconButton(
+              icon: Icon(Icons.refresh_rounded, color: color),
+              onPressed: onSync,
+            ),
           ),
         );
       },
