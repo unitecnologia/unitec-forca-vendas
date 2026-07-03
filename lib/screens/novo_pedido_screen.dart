@@ -1587,6 +1587,45 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
     setState(() {});
   }
 
+  void _alterarQtd(double delta) {
+    final nova = (_parseNum(_qtd.text) + delta).clamp(0.001, 999999.0).toDouble();
+    _qtd.text = nova == nova.roundToDouble()
+        ? nova.toStringAsFixed(0)
+        : nova.toStringAsFixed(2).replaceAll('.', ',');
+    _syncFromPct();
+    setState(() {});
+  }
+
+  void _alterarDescPct(double delta) {
+    final nova = (_parseNum(_descPct.text) + delta).clamp(0.0, 100.0).toDouble();
+    _descPct.text = _fmtNum(nova);
+    _syncFromPct();
+    setState(() {});
+  }
+
+  void _alterarDescValor(double delta) {
+    final nova = (_parseNum(_descValor.text) + delta).clamp(0.0, _bruto).toDouble();
+    _descValor.text = _fmtNum(nova);
+    _syncFromValor();
+    setState(() {});
+  }
+
+  Widget _stepBtn(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Brand.blue.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 40,
+          height: 48,
+          child: Icon(icon, size: 20, color: Brand.blue),
+        ),
+      ),
+    );
+  }
+
   void _confirmar() {
     final qtd = _quantidade;
     if (qtd <= 0) return;
@@ -1653,46 +1692,73 @@ class _AdicionarItemSheetState extends State<_AdicionarItemSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _qtd,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Quantidade',
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                  ),
-                  onChanged: (_) {
-                    _syncFromPct();
-                    setState(() {});
-                  },
+                Row(
+                  children: [
+                    _stepBtn(Icons.remove_rounded, () => _alterarQtd(-1)),
+                    Expanded(
+                      child: TextField(
+                        controller: _qtd,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        textAlign: TextAlign.center,
+                        decoration: const InputDecoration(
+                          labelText: 'Quantidade',
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                        ),
+                        onChanged: (_) {
+                          _syncFromPct();
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    _stepBtn(Icons.add_rounded, () => _alterarQtd(1)),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _descPct,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Desconto %',
-                          suffixText: '%',
-                          filled: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                        ),
-                        onChanged: (_) => _syncFromPct(),
+                      child: Row(
+                        children: [
+                          _stepBtn(Icons.remove_rounded, () => _alterarDescPct(-1)),
+                          Expanded(
+                            child: TextField(
+                              controller: _descPct,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                labelText: 'Desconto %',
+                                suffixText: '%',
+                                filled: true,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                              ),
+                              onChanged: (_) => _syncFromPct(),
+                            ),
+                          ),
+                          _stepBtn(Icons.add_rounded, () => _alterarDescPct(1)),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextField(
-                        controller: _descValor,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Desconto R\$',
-                          filled: true,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                        ),
-                        onChanged: (_) => _syncFromValor(),
+                      child: Row(
+                        children: [
+                          _stepBtn(Icons.remove_rounded, () => _alterarDescValor(-1)),
+                          Expanded(
+                            child: TextField(
+                              controller: _descValor,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                labelText: 'Desconto R\$',
+                                filled: true,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                              ),
+                              onChanged: (_) => _syncFromValor(),
+                            ),
+                          ),
+                          _stepBtn(Icons.add_rounded, () => _alterarDescValor(1)),
+                        ],
                       ),
                     ),
                   ],
