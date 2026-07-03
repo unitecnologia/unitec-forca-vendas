@@ -191,7 +191,9 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               _linha('Preço a prazo', brMoney(p['preco_venda_prazo'] as num?)),
               _linha('Preço atacado', brMoney(p['preco_atacado'] as num?)),
               if (promo > 0) _linha('Promoção', brMoney(promo), destaque: true),
-              _linha('Estoque', '${(p['estoque'] as num?)?.toString() ?? '0'} ${p['unidade'] ?? ''}'),
+              _linha('Est. atual', '${fmtEstoque(estoqueAtual(p))} ${p['unidade'] ?? ''}'),
+              _linha('Est. reserv.', '${fmtEstoque(estoqueReservado(p))} ${p['unidade'] ?? ''}'),
+              _linha('Est. disp.', '${fmtEstoque(estoqueDisponivel(p))} ${p['unidade'] ?? ''}'),
             ],
           ),
         ),
@@ -225,7 +227,6 @@ class _ProdutoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final estoque = (p['estoque'] as num?)?.toDouble() ?? 0;
     final preco = (p['preco_venda'] as num?)?.toDouble() ?? 0;
     final fotoUrl = _fotoFullUrl(base, p['foto_url']);
     final descricao = (p['descricao'] ?? '').toString();
@@ -239,7 +240,11 @@ class _ProdutoCard extends StatelessWidget {
           child: _Miniatura(url: fotoUrl),
         ),
         title: Text(descricao, maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text('Cód. ${p['codigo'] ?? ''}  •  Estoque: ${estoque.toStringAsFixed(estoque == estoque.roundToDouble() ? 0 : 2)}'),
+        subtitle: Text(
+          'Cód. ${p['codigo'] ?? ''}  •  ${estoqueLinhaCompacta(p)}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: Text(brMoney(preco),
             style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
         onTap: onTap,

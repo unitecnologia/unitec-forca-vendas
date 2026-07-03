@@ -23,3 +23,31 @@ String brDate(String? iso) {
   final mm = d.month.toString().padLeft(2, '0');
   return '$dd/$mm/${d.year}';
 }
+
+/// Formata quantidade de estoque (0 decimais se inteiro).
+String fmtEstoque(num? value) {
+  final v = (value ?? 0).toDouble();
+  return v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2);
+}
+
+double estoqueAtual(Map<String, dynamic> p) =>
+    (p['estoque'] as num?)?.toDouble() ?? 0;
+
+double estoqueReservado(Map<String, dynamic> p) =>
+    (p['estoque_reservado'] as num?)?.toDouble() ?? 0;
+
+double estoqueDisponivel(Map<String, dynamic> p) {
+  if (p.containsKey('estoque_disponivel') && p['estoque_disponivel'] != null) {
+    return (p['estoque_disponivel'] as num).toDouble();
+  }
+  return estoqueAtual(p) - estoqueReservado(p);
+}
+
+/// Resumo compacto: Atual | Reserv. | Disp. (mesma ordem do ERP web).
+String estoqueLinhaCompacta(Map<String, dynamic> p, {String? unidade}) {
+  final u = (unidade ?? (p['unidade'] ?? '').toString()).trim();
+  final suffix = u.isNotEmpty ? ' $u' : '';
+  return 'Atual: ${fmtEstoque(estoqueAtual(p))} | '
+      'Reserv.: ${fmtEstoque(estoqueReservado(p))} | '
+      'Disp.: ${fmtEstoque(estoqueDisponivel(p))}$suffix';
+}

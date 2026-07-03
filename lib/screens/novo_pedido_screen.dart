@@ -1852,7 +1852,6 @@ class _BuscaSheetState extends State<_BuscaSheet> {
   Widget _produtoItem(Map<String, dynamic> r) {
     final base = context.read<AppState>().config.baseUrl;
     final fotoUrl = _fotoBuscaUrl(base, r['foto_url']);
-    final estoque = (r['estoque'] as num?)?.toDouble() ?? 0;
     final preco = (r['preco_venda'] as num?)?.toDouble() ?? 0;
     final descricao = (r['descricao'] ?? '').toString();
     return Material(
@@ -1877,7 +1876,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
                     const SizedBox(height: 3),
                     Text(
-                        'Cód. ${r['codigo'] ?? ''}  •  Estoque: ${_fmtEstoque(estoque)} ${r['unidade'] ?? ''}',
+                        'Cód. ${r['codigo'] ?? ''}  •  ${estoqueLinhaCompacta(r)}',
                         style: const TextStyle(color: Colors.black54, fontSize: 12)),
                   ],
                 ),
@@ -1891,8 +1890,6 @@ class _BuscaSheetState extends State<_BuscaSheet> {
       ),
     );
   }
-
-  String _fmtEstoque(double v) => v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2);
 }
 
 /// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.

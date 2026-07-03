@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -39,6 +39,14 @@ class LocalDb {
         if (oldVersion < 6) {
           await db.execute(_createVisitasSemVendaSql);
         }
+        if (oldVersion < 7) {
+          await db.execute('ALTER TABLE products ADD COLUMN estoque_reservado REAL DEFAULT 0');
+          await db.execute('ALTER TABLE products ADD COLUMN estoque_disponivel REAL');
+          await db.execute(
+            'UPDATE products SET estoque_disponivel = estoque, estoque_reservado = 0 '
+            'WHERE estoque_disponivel IS NULL',
+          );
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
@@ -47,7 +55,8 @@ class LocalDb {
             codigo TEXT, codigo_barras TEXT, descricao TEXT, unidade TEXT,
             marca TEXT, grupo TEXT,
             preco_venda REAL, preco_venda_prazo REAL, preco_atacado REAL, qtd_atacado REAL,
-            estoque REAL, usa_tab_preco INTEGER, mostrar_no_app INTEGER,
+            estoque REAL, estoque_reservado REAL, estoque_disponivel REAL,
+            usa_tab_preco INTEGER, mostrar_no_app INTEGER,
             promo_preco_venda REAL, foto_url TEXT, ativo INTEGER, updated_at TEXT
           )''');
         await db.execute('''
