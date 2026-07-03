@@ -21,6 +21,7 @@ class SyncService extends ChangeNotifier {
   final LocalDb _db = LocalDb.instance;
 
   Timer? _timer;
+  Future<void>? _inFlight;
   SyncStatus status = SyncStatus.idle;
   String? lastError;
   DateTime? lastSyncAt;
@@ -28,10 +29,20 @@ class SyncService extends ChangeNotifier {
 
   void start() {
     stop();
+    _restoreLastSync();
     // Primeira sync imediata, depois a cada 30s + jitter (0-5s) para os
     // aparelhos não baterem no servidor no mesmo instante.
     syncNow();
     _scheduleNext();
+  }
+
+  void _restoreLastSync() {
+    final iso = config.lastSyncIso;
+    if (iso == null || iso.isEmpty) return;
+    lastSyncAt = DateTime.tryParse(iso);
+    if (lastSyncAt != null) {
+      status = SyncStatus.ok;
+    }
   }
 
   void _scheduleNext() {
@@ -49,12 +60,22 @@ class SyncService extends ChangeNotifier {
 
   Future<void> syncNow() async {
     if (!config.isLoggedIn) return;
+    if (_inFlight != null) return _inFlight!;
+    _inFlight = _syncNowInternal();
+    try {
+      await _inFlight;
+    } finally {
+      _inFlight = null;
+    }
+  }
+
+  Future<void> _syncNowInternal() async {
     final prev = status;
     status = SyncStatus.syncing;
     notifyListeners();
     try {
-      await _push();
-      await _pull();
+      await _push().timeout(const Duration(seconds: 45));
+      await _pull().timeout(const Duration(seconds: 60));
       pendingCount = await _db.pendingCount();
       lastSyncAt = DateTime.now();
       config.lastSyncIso = lastSyncAt!.toUtc().toIso8601String();
@@ -64,6 +85,10 @@ class SyncService extends ChangeNotifier {
       if (prev != SyncStatus.ok) {
         AppLog.instance.ok('sync', 'Sincronizado (pendentes: $pendingCount)');
       }
+    } on TimeoutException {
+      status = SyncStatus.offline;
+      lastError = 'Tempo esgotado — tente novamente';
+      AppLog.instance.warn('sync', 'Timeout na sincronização');
     } on ApiException catch (e) {
       status = SyncStatus.error;
       lastError = e.message;
@@ -209,8 +234,8 @@ class SyncService extends ChangeNotifier {
       AppLog.instance.info('sync', 'Enviando ${customers.length} cliente(s)...');
     }
 
-    if (visitas.isNotEmpty) {
-      AppLog.instance.info('sync', 'Enviando ${visitas.length} visita(s) sem venda...');
+    if (visitasPendentes.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${visitasPendentes.length} visita(s) sem venda...');
     }
 
     if (customers.isNotEmpty) {

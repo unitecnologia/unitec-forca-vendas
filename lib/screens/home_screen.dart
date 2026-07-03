@@ -362,7 +362,7 @@ class _SyncCard extends StatelessWidget {
           SyncStatus.ok => (Brand.green, 'Sincronizado'),
           SyncStatus.offline => (Colors.orange, 'Offline (dados salvos no aparelho)'),
           SyncStatus.error => (Colors.red, 'Erro: ${sync.lastError ?? ''}'),
-          SyncStatus.idle => (Colors.grey, 'Aguardando...'),
+          SyncStatus.idle => (Colors.grey, 'Preparando sincronização...'),
         };
         final last = sync.lastSyncAt != null
             ? DateFormat('dd/MM HH:mm:ss').format(sync.lastSyncAt!)

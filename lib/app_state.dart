@@ -12,6 +12,13 @@ class AppState extends ChangeNotifier {
     sync = SyncService(config, api);
   }
 
+  /// Restaura sessão persistida (sync periódica após reabrir o app).
+  Future<void> initialize() async {
+    if (config.isLoggedIn) {
+      sync.start();
+    }
+  }
+
   final AppConfig config;
   final ApiClient api;
   late final SyncService sync;

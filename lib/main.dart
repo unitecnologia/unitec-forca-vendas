@@ -28,7 +28,9 @@ Future<void> main() async {
   await AppLog.instance.load();
   AppLog.instance.info('app', 'Aplicativo iniciado');
   final config = await AppConfig.load();
-  runApp(UnitecForcaVendasApp(state: AppState(config)));
+  final state = AppState(config);
+  await state.initialize();
+  runApp(UnitecForcaVendasApp(state: state));
 }
 
 class UnitecForcaVendasApp extends StatefulWidget {
@@ -60,6 +62,9 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
     if (state == AppLifecycleState.resumed) {
       _aplicarModoTela();
       WakelockPlus.enable();
+      if (widget.state.isLoggedIn) {
+        widget.state.sync.syncNow();
+      }
     }
   }
 
