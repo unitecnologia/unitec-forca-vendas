@@ -4,8 +4,8 @@
 /// `kAppVersion` é exibida nas telas e enviada ao ERP (registro/login)
 /// para facilitar o controle de qual build está em cada aparelho.
 const String kAppName = 'Unitec Força de Vendas';
-const String kAppVersion = '1.3.3';
-const int kAppBuild = 9;
+const String kAppVersion = '1.3.4';
+const int kAppBuild = 10;
 
 /// Texto pronto para exibição (ex.: "v1.1.0 (2)").
 const String kAppVersionLabel = 'v$kAppVersion ($kAppBuild)';
