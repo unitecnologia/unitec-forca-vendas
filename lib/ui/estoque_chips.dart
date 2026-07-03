@@ -100,7 +100,7 @@ class EstoquePainel extends StatelessWidget {
     final unidade = (produto['unidade'] ?? '').toString().trim();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
@@ -112,13 +112,13 @@ class EstoquePainel extends StatelessWidget {
           const Text(
             'Estoque',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               color: Color(0xFF64748B),
               letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -159,15 +159,15 @@ class EstoquePainel extends StatelessWidget {
 
   Widget _coluna(String titulo, String valor, String unidade, Color bg, Color fg) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: bg.withValues(alpha: 0.25),
-            blurRadius: 3,
-            offset: const Offset(0, 2),
+            color: bg.withValues(alpha: 0.22),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -176,17 +176,17 @@ class EstoquePainel extends StatelessWidget {
           Text(
             titulo,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.w600,
               color: fg.withValues(alpha: 0.9),
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             valor,
             style: TextStyle(
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.w800,
               color: fg,
             ),
@@ -196,7 +196,7 @@ class EstoquePainel extends StatelessWidget {
             Text(
               unidade,
               style: TextStyle(
-                fontSize: 9,
+                fontSize: 8,
                 fontWeight: FontWeight.w600,
                 color: fg.withValues(alpha: 0.85),
               ),

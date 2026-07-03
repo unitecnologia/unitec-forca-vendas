@@ -13,4 +13,9 @@ class Brand {
   static const Color estoqueReservado = Color(0xFFFFC107);
   static const Color estoqueReservadoText = Color(0xFF422006);
   static const Color estoqueDisponivel = Color(0xFF16A34A);
+
+  /// Preços no detalhe do produto.
+  static const Color precoVista = Color(0xFF16A34A);
+  static const Color precoPrazo = Color(0xFF1565C0);
+  static const Color precoAtacado = Color(0xFFEA580C);
 }

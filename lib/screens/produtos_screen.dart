@@ -220,11 +220,12 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               EstoquePainel(produto: p),
               const SizedBox(height: 16),
               const Divider(height: 1),
-              const SizedBox(height: 8),
-              _linha('Preço à vista', brMoney(p['preco_venda'] as num?)),
-              _linha('Preço a prazo', brMoney(p['preco_venda_prazo'] as num?)),
-              _linha('Preço atacado', brMoney(p['preco_atacado'] as num?)),
-              if (promo > 0) _linha('Promoção', brMoney(promo), destaque: true),
+              const SizedBox(height: 10),
+              _linhaPreco('Preço à vista', brMoney(p['preco_venda'] as num?), Brand.precoVista),
+              _linhaPreco('Preço a prazo', brMoney(p['preco_venda_prazo'] as num?), Brand.precoPrazo),
+              _linhaPreco('Preço atacado', brMoney(p['preco_atacado'] as num?), Brand.precoAtacado),
+              if (promo > 0)
+                _linhaPreco('Promoção', brMoney(promo), const Color(0xFF7C3AED)),
             ],
           ),
         ),
@@ -232,18 +233,55 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     );
   }
 
-  Widget _linha(String label, String valor, {bool destaque = false}) {
+  Widget _linhaPreco(String label, String valor, Color cor) {
+    const fg = Colors.white;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          Text(valor,
-              style: TextStyle(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: cor,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(
+              color: cor.withValues(alpha: 0.28),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: 0.95),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: destaque ? Brand.green : const Color(0xFF263238))),
-        ],
+                  fontSize: 13,
+                  color: fg,
+                ),
+              ),
+            ),
+            Text(
+              valor,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: fg,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
