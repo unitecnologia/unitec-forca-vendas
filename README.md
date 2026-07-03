@@ -93,9 +93,27 @@ Passos:
    página do build de qualquer forma).
 4. **Start new build** → ao terminar, baixe `app-release.apk` em *Artifacts*.
 
-> Observação: o build release é assinado com a **chave de debug** (padrão do
-> `flutter create`), suficiente para instalação interna. Para uma chave de release
-> própria, adicione um keystore e `key.properties` mais tarde.
+## Atualizar o app no celular (sem desinstalar)
+
+O Android só aceita **atualização por cima** quando o novo APK tem:
+
+1. **O mesmo pacote** — `com.unitec.unitec_forca_vendas` (fixo no CI).
+2. **A mesma assinatura digital** — todos os builds do Codemagic usam
+   `ci/unitecfv-release.p12` (ou a keystore do grupo `keystore_credentials`).
+3. **`versionCode` maior** — o Codemagic usa o maior entre `BUILD_NUMBER` e o
+   número após o `+` no `pubspec.yaml` (ex.: `1.3.0+6` → mínimo 6).
+
+Se aparecer *"entra em conflito com um pacote já existente"* ou pedir para
+**desinstalar antes**, quase sempre é **assinatura diferente**: o APK antigo foi
+gerado com outra chave (build antigo do CI que criava keystore nova a cada vez,
+APK de debug local, etc.).
+
+**O que fazer uma vez:** desinstale o app antigo, instale o APK novo do Codemagic.
+Depois disso, as próximas versões instalam por cima normalmente (mesma chave).
+
+> A keystore de release fica em `ci/unitecfv-release.p12` (alias `unitecfv`).
+> Para trocar a chave no futuro, use o grupo `keystore_credentials` no Codemagic
+> — mas aí será necessário desinstalar nos aparelhos **uma vez** de novo.
 
 ## Estrutura
 
