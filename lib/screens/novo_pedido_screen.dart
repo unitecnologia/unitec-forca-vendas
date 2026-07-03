@@ -281,7 +281,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (item == null) return;
 
     setState(() {
-      _itens.add(item);
+      _itens.insert(0, item);
       _recalcDescontoDePct();
     });
   }
@@ -621,52 +621,63 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return Column(
       children: [
         Container(
-          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Colors.white, Color(0xFFF4F8FC)],
+              colors: [Colors.white, Color.lerp(Colors.white, Brand.blue, 0.04)!],
             ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Brand.blue.withValues(alpha: 0.1)),
             boxShadow: [
-              BoxShadow(color: Brand.blue.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 4)),
+              BoxShadow(color: Brand.blue.withValues(alpha: 0.07), blurRadius: 8, offset: const Offset(0, 3)),
             ],
           ),
           child: Column(
             children: [
-              _resumoRow('Total de itens', '${_itens.length}'),
-              _resumoRow('Valor bruto', brMoney(_brutoItens)),
-              if (_descontoItens > 0)
-                _resumoRow('Desconto nos itens', brMoney(_descontoItens), valorColor: Colors.orange.shade800),
-              _resumoRow('Valor dos produtos', brMoney(_subtotalItens)),
-              _resumoRow('Frete', brMoney(_freteValor)),
-              if (_descontoPedido > 0)
-                _resumoRow('Desconto do pedido', brMoney(_descontoPedido), valorColor: Colors.orange.shade800),
-              const Divider(height: 20),
-              _resumoRow('Valor total', brMoney(_total), destaque: true),
+              Row(
+                children: [
+                  Expanded(child: _resumoCompacto('Itens', '${_itens.length}')),
+                  Expanded(child: _resumoCompacto('Bruto', brMoney(_brutoItens))),
+                  Expanded(child: _resumoCompacto('Produtos', brMoney(_subtotalItens))),
+                ],
+              ),
+              if (_descontoItens > 0 || _descontoPedido > 0 || _freteValor > 0) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (_descontoItens > 0)
+                      _chipResumo('Desc. itens', brMoney(_descontoItens), Colors.orange.shade800),
+                    if (_descontoPedido > 0)
+                      _chipResumo('Desc. pedido', brMoney(_descontoPedido), Colors.orange.shade800),
+                    if (_freteValor > 0) _chipResumo('Frete', brMoney(_freteValor), const Color(0xFF475569)),
+                  ],
+                ),
+              ],
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Divider(height: 1),
+              ),
+              _resumoRow('Valor total', brMoney(_total), destaque: true, compacto: true),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _adicionarItem,
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Adicionar Item'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Brand.blue,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          child: FilledButton.icon(
+            onPressed: _adicionarItem,
+            icon: const Icon(Icons.add_rounded, size: 20),
+            label: const Text('Adicionar item'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Brand.blue,
+              minimumSize: const Size.fromHeight(42),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           ),
         ),
         Expanded(
@@ -675,17 +686,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.inventory_2_outlined, size: 48, color: Colors.grey.shade400),
-                      const SizedBox(height: 8),
-                      const Text('Nenhum item adicionado.', style: TextStyle(color: Colors.black54)),
+                      Icon(Icons.inventory_2_outlined, size: 40, color: Colors.grey.shade400),
+                      const SizedBox(height: 6),
+                      Text('Nenhum item.', style: TextStyle(color: Colors.black.withValues(alpha: 0.45), fontSize: 13)),
                     ],
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   itemCount: _itens.length,
                   itemBuilder: (_, i) => _ItemTile(
-                    key: ValueKey('item-$i-${_itens[i].productId}'),
+                    key: ValueKey('item-$i-${_itens[i].productId}-${_itens[i].quantidade}'),
                     indice: i + 1,
                     item: _itens[i],
                     onChanged: () {
@@ -700,6 +711,28 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _resumoCompacto(String label, String valor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
+        const SizedBox(height: 2),
+        Text(valor, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF263238))),
+      ],
+    );
+  }
+
+  Widget _chipResumo(String label, String valor, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text('$label: $valor', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
@@ -1185,20 +1218,20 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _resumoRow(String label, String valor, {bool destaque = false, Color? valorColor}) {
+  Widget _resumoRow(String label, String valor, {bool destaque = false, Color? valorColor, bool compacto = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.symmetric(vertical: compacto ? 2 : 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
               style: TextStyle(
                   fontWeight: destaque ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: destaque ? 16 : 14)),
+                  fontSize: destaque ? (compacto ? 15 : 16) : (compacto ? 13 : 14))),
           Text(valor,
               style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: destaque ? 17 : 14,
+                  fontSize: destaque ? (compacto ? 16 : 17) : (compacto ? 13 : 14),
                   color: valorColor ?? (destaque ? Brand.green : const Color(0xFF263238)))),
         ],
       ),
@@ -1333,13 +1366,13 @@ class _ItemTileState extends State<_ItemTile> {
       isDense: true,
       filled: true,
       fillColor: readOnly ? const Color(0xFFF1F5F9) : Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: readOnly ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
       ),
     );
@@ -1348,135 +1381,121 @@ class _ItemTileState extends State<_ItemTile> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Brand.blue.withValues(alpha: 0.1)),
         boxShadow: [
-          BoxShadow(color: Brand.blue.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3)),
+          BoxShadow(color: Brand.blue.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2)),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 24,
+                  height: 24,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Brand.blue.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
+                    gradient: LinearGradient(
+                      colors: [Brand.blue.withValues(alpha: 0.18), Brand.blue.withValues(alpha: 0.08)],
+                    ),
+                    borderRadius: BorderRadius.circular(7),
                   ),
                   child: Text('${widget.indice}',
-                      style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 12)),
+                      style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 11)),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(item.descricao,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, height: 1.2)),
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.15)),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.delete_outline_rounded),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
                   color: Colors.redAccent,
                   onPressed: widget.onRemove,
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  flex: 5,
+                  child: Row(
                     children: [
-                      const Text('Quantidade', style: TextStyle(fontSize: 11, color: Colors.black54)),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          _qtdBtn(Icons.remove_rounded, () => _alterarQtd(-1)),
-                          Expanded(
-                            child: TextField(
-                              controller: _qtd,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              textAlign: TextAlign.center,
-                              decoration: _dec('Qtd'),
-                              onSubmitted: _aplicarQtd,
-                              onEditingComplete: () => _aplicarQtd(_qtd.text),
-                            ),
-                          ),
-                          _qtdBtn(Icons.add_rounded, () => _alterarQtd(1)),
-                        ],
+                      _qtdBtn(Icons.remove_rounded, () => _alterarQtd(-1)),
+                      Expanded(
+                        child: TextField(
+                          controller: _qtd,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: _dec('Qtd'),
+                          onSubmitted: _aplicarQtd,
+                          onEditingComplete: () => _aplicarQtd(_qtd.text),
+                        ),
                       ),
+                      _qtdBtn(Icons.add_rounded, () => _alterarQtd(1)),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Preço unit.', style: TextStyle(fontSize: 11, color: Colors.black54)),
-                      const SizedBox(height: 4),
-                      Container(
-                        height: 42,
-                        alignment: Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Text(
-                          brMoney(item.precoUnitario),
-                          style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF475569)),
-                        ),
-                      ),
-                    ],
+                  flex: 4,
+                  child: InputDecorator(
+                    decoration: _dec('Preço', readOnly: true),
+                    child: Text(
+                      brMoney(item.precoUnitario),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF475569)),
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _descPct,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontSize: 13),
                     decoration: _dec('Desc. %', suffix: '%'),
                     onChanged: (_) => _syncDescFromPct(),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: TextField(
                     controller: _descValor,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontSize: 13),
                     decoration: _dec('Desc. R\$', suffix: 'R\$'),
                     onChanged: (_) => _syncDescFromValor(),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Bruto: ${brMoney(item.bruto)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
                 Text('Total: ${brMoney(item.total)}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Brand.green)),
               ],
             ),
           ],
@@ -1487,17 +1506,17 @@ class _ItemTileState extends State<_ItemTile> {
 
   Widget _qtdBtn(IconData icon, VoidCallback onTap) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 1),
       child: Material(
         color: Brand.blue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(7),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(7),
           child: SizedBox(
-            width: 34,
-            height: 42,
-            child: Icon(icon, size: 18, color: Brand.blue),
+            width: 30,
+            height: 36,
+            child: Icon(icon, size: 16, color: Brand.blue),
           ),
         ),
       ),
