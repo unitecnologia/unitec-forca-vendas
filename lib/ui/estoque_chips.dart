@@ -89,6 +89,131 @@ class EstoqueChips extends StatelessWidget {
   }
 }
 
+/// Linha alinhada em colunas fixas (lista de produtos) — ~5 dígitos por campo.
+class EstoqueLinhaGrid extends StatelessWidget {
+  const EstoqueLinhaGrid({
+    super.key,
+    required this.produto,
+    required this.codigo,
+  });
+
+  final Map<String, dynamic> produto;
+  final String codigo;
+
+  static const double _gap = 3;
+  static const double _colCod = 46;
+  static const double _colChip = 54;
+
+  @override
+  Widget build(BuildContext context) {
+    final unidade = (produto['unidade'] ?? '').toString().trim();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: _colCod,
+          child: Text(
+            'Cód. $codigo',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+              height: 1.1,
+            ),
+          ),
+        ),
+        const SizedBox(width: _gap),
+        _celula(
+          'Atual',
+          fmtEstoque(estoqueAtual(produto)),
+          Brand.estoqueAtual,
+          Colors.white,
+        ),
+        const SizedBox(width: _gap),
+        _celula(
+          'Reserv.',
+          fmtEstoque(estoqueReservado(produto)),
+          Brand.estoqueReservado,
+          Brand.estoqueReservadoText,
+        ),
+        const SizedBox(width: _gap),
+        _celula(
+          'Disp.',
+          fmtEstoque(estoqueDisponivel(produto)),
+          Brand.estoqueDisponivel,
+          Colors.white,
+          unidade: unidade,
+        ),
+      ],
+    );
+  }
+
+  Widget _celula(String label, String valor, Color bg, Color fg, {String unidade = ''}) {
+    return SizedBox(
+      width: _colChip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [
+            BoxShadow(
+              color: bg.withValues(alpha: 0.22),
+              blurRadius: 1,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
+                color: fg.withValues(alpha: 0.92),
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              valor,
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: fg,
+                height: 1,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            if (unidade.isNotEmpty)
+              Text(
+                unidade,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 7,
+                  fontWeight: FontWeight.w700,
+                  color: fg.withValues(alpha: 0.88),
+                  height: 1,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Linha de estoque colorida para modais (três colunas alinhadas).
 class EstoquePainel extends StatelessWidget {
   const EstoquePainel({super.key, required this.produto});
