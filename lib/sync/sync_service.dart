@@ -202,6 +202,7 @@ class SyncService extends ChangeNotifier {
     if (fullPull) {
       await _db.deleteAll('historico_vendas');
       await _db.deleteAll('historico_orcamentos');
+      await _db.deleteAll('pedidos_fv_cache');
     }
     await _db.upsertAll('historico_vendas', data['historico_vendas'] ?? [], (r) => {
           'id': r['id'], 'numero': r['numero'], 'numero_orcamento': r['numero_orcamento'],
@@ -214,7 +215,9 @@ class SyncService extends ChangeNotifier {
         });
 
     for (final row in (data['pedidos_fv'] as List?) ?? const []) {
-      await _db.applyPedidoFvSync(Map<String, dynamic>.from(row as Map));
+      final m = Map<String, dynamic>.from(row as Map);
+      await _db.upsertPedidoFvCache(_mapPedidoFvCacheRow(m));
+      await _db.applyPedidoFvSync(m);
     }
 
     if (data['_etag'] != null) {
@@ -392,6 +395,39 @@ class SyncService extends ChangeNotifier {
     } else if (clientesOk > 0) {
       AppLog.instance.ok('sync', 'Clientes: $clientesOk enviado(s)');
     }
+  }
+
+  static Map<String, dynamic> _mapPedidoFvCacheRow(Map<String, dynamic> row) {
+    final situacao = (row['situacao'] ?? '').toString();
+    var status = (row['status'] ?? '').toString();
+    if (situacao == 'faturado') {
+      status = 'faturado';
+    } else if (situacao == 'cancelado') {
+      status = 'cancelado';
+    } else if (status == 'importado') {
+      status = 'enviado';
+    }
+
+    final extra = <String, dynamic>{
+      if (row['forma_pagamento'] != null) 'forma_pagamento': row['forma_pagamento'],
+      if (row['condicao_pagamento'] != null) 'condicao_pagamento': row['condicao_pagamento'],
+    };
+
+    return {
+      'uuid': row['uuid'],
+      'cliente_id': row['cliente_id'],
+      'tipo': row['tipo'] ?? 'pedido',
+      'numero': row['numero'],
+      'numero_pedido': row['numero_pedido'],
+      'total': _d(row['total']),
+      'observacoes': row['observacoes'],
+      'desconto_valor': _d(row['desconto_valor']),
+      'itens_json': jsonEncode(row['itens'] ?? []),
+      'extra_json': jsonEncode(extra),
+      'created_at': row['created_at'] ?? row['data'],
+      'status': status,
+      'situacao': situacao,
+    };
   }
 
   static List<dynamic> _parseItens(String json) {

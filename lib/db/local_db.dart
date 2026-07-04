@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 9,
+      version: 10,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -54,6 +54,9 @@ class LocalDb {
         if (oldVersion < 9) {
           await db.execute('ALTER TABLE outbox_orders ADD COLUMN numero_pedido TEXT');
           await db.execute('ALTER TABLE historico_vendas ADD COLUMN numero_orcamento TEXT');
+        }
+        if (oldVersion < 10) {
+          await db.execute(_createPedidosFvCacheSql);
         }
       },
       onCreate: (db, _) async {
@@ -121,9 +124,27 @@ class LocalDb {
         await db.execute(_createOutboxCustomersSql);
         await db.execute(_createFormasPagamentoSql);
         await db.execute(_createVisitasSemVendaSql);
+        await db.execute(_createPedidosFvCacheSql);
       },
     );
   }
+
+  static const String _createPedidosFvCacheSql = '''
+          CREATE TABLE IF NOT EXISTS pedidos_fv_cache (
+            uuid TEXT PRIMARY KEY,
+            cliente_id INTEGER,
+            tipo TEXT,
+            numero TEXT,
+            numero_pedido TEXT,
+            total REAL,
+            observacoes TEXT,
+            desconto_valor REAL,
+            itens_json TEXT,
+            extra_json TEXT,
+            created_at TEXT,
+            status TEXT,
+            situacao TEXT
+          )''';
 
   static const String _createVisitasSemVendaSql = '''
           CREATE TABLE IF NOT EXISTS visitas_sem_venda (
@@ -276,6 +297,52 @@ class LocalDb {
       [uuid],
     );
     return rows.isEmpty ? null : rows.first;
+  }
+
+  /// Pedido completo para PDF: outbox local ou cache vindo do ERP (após reinstalar).
+  Future<Map<String, dynamic>?> orderForPdf(String uuid) async {
+    final outbox = await outboxOrderByUuid(uuid);
+    if (outbox != null) {
+      return outbox;
+    }
+
+    final database = await db;
+    final rows = await database.rawQuery(
+      'SELECT p.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.fone1, c.celular1, c.whatsapp '
+      'FROM pedidos_fv_cache p '
+      'LEFT JOIN customers c ON c.id = p.cliente_id '
+      'WHERE p.uuid = ? LIMIT 1',
+      [uuid],
+    );
+
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> upsertPedidoFvCache(Map<String, dynamic> row) async {
+    final uuid = (row['uuid'] ?? '').toString();
+    if (uuid.isEmpty) return;
+
+    final database = await db;
+    await database.insert(
+      'pedidos_fv_cache',
+      {
+        'uuid': uuid,
+        'cliente_id': row['cliente_id'],
+        'tipo': row['tipo'] ?? 'pedido',
+        'numero': row['numero']?.toString(),
+        'numero_pedido': row['numero_pedido']?.toString(),
+        'total': row['total'] ?? 0,
+        'observacoes': row['observacoes']?.toString(),
+        'desconto_valor': row['desconto_valor'] ?? 0,
+        'itens_json': row['itens_json'] ?? '[]',
+        'extra_json': row['extra_json'] ?? '{}',
+        'created_at': row['created_at']?.toString() ?? row['data']?.toString(),
+        'status': row['status']?.toString(),
+        'situacao': row['situacao']?.toString(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> pendingCount() async {

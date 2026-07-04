@@ -42,6 +42,21 @@ class _PedidosScreenState extends State<PedidosScreen> {
       args,
     );
 
+    final List<Map<String, dynamic>> pedidosFvCache;
+    if (ehOrcamento) {
+      pedidosFvCache = await _db.query(
+        'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, c.nome_razao '
+        'FROM pedidos_fv_cache p LEFT JOIN customers c ON c.id = p.cliente_id '
+        "WHERE p.tipo = 'orcamento' ORDER BY p.created_at DESC LIMIT 500",
+      );
+    } else {
+      pedidosFvCache = await _db.query(
+        'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, c.nome_razao '
+        'FROM pedidos_fv_cache p LEFT JOIN customers c ON c.id = p.cliente_id '
+        "WHERE p.tipo IS NULL OR p.tipo = 'pedido' ORDER BY p.created_at DESC LIMIT 500",
+      );
+    }
+
     final List<Map<String, dynamic>> historico;
     if (ehOrcamento) {
       historico = await _db.query(
@@ -62,6 +77,10 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final chavesOutbox = <String>{
       for (final o in outbox) _chaveDedup(o['numero'], o['numero_pedido']),
     };
+    final uuidsOutbox = <String>{
+      for (final o in outbox)
+        if ((o['uuid'] ?? '').toString().isNotEmpty) (o['uuid']).toString(),
+    };
 
     final unified = <Map<String, dynamic>>[];
     for (final o in outbox) {
@@ -76,6 +95,24 @@ class _PedidosScreenState extends State<PedidosScreen> {
         'erro': o['erro'],
         'created_at': o['created_at'],
       });
+    }
+    for (final p in pedidosFvCache) {
+      final uuid = (p['uuid'] ?? '').toString();
+      if (uuid.isNotEmpty && uuidsOutbox.contains(uuid)) continue;
+      final chave = _chaveDedup(p['numero'], p['numero_pedido']);
+      if (chave.isNotEmpty && chavesOutbox.contains(chave)) continue;
+      unified.add({
+        'fonte': 'erp',
+        'uuid': p['uuid'],
+        'nome_razao': p['nome_razao'],
+        'numero': p['numero'],
+        'numero_pedido': p['numero_pedido'],
+        'total': p['total'],
+        'status': _statusFromPedidoFv(p),
+        'erro': '',
+        'created_at': p['created_at'],
+      });
+      if (chave.isNotEmpty) chavesOutbox.add(chave);
     }
     for (final h in historico) {
       final numeroPedido = ehOrcamento ? null : h['numero'];
@@ -107,6 +144,15 @@ class _PedidosScreenState extends State<PedidosScreen> {
         _carregando = false;
       });
     }
+  }
+
+  static String _statusFromPedidoFv(Map<String, dynamic> p) {
+    final situacao = (p['situacao'] ?? '').toString();
+    if (situacao == 'faturado') return 'faturado';
+    if (situacao == 'cancelado') return 'cancelado';
+    final status = (p['status'] ?? '').toString();
+    if (status == 'importado') return 'enviado';
+    return status.isNotEmpty ? status : 'fechado';
   }
 
   static String _chaveDedup(Object? numeroDav, Object? numeroPedido) {
@@ -206,7 +252,7 @@ class _PedidoCard extends StatelessWidget {
     final uuid = (p['uuid'] ?? '').toString();
     if (uuid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF disponível apenas para pedidos lançados neste aparelho.')),
+        const SnackBar(content: Text('Este pedido não possui dados para PDF. Sincronize novamente.')),
       );
       return;
     }

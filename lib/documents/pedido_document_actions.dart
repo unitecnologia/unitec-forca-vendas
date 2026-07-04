@@ -11,7 +11,7 @@ import 'pedido_pdf.dart';
 /// Compartilha ou imprime o PDF de um pedido salvo localmente (outbox).
 class PedidoDocumentActions {
   static Future<Map<String, dynamic>?> _loadOrder(String uuid) async {
-    return LocalDb.instance.outboxOrderByUuid(uuid);
+    return LocalDb.instance.orderForPdf(uuid);
   }
 
   static String _fileName(Map<String, dynamic> order) {
@@ -34,7 +34,7 @@ class PedidoDocumentActions {
   static Future<void> imprimir(BuildContext context, String uuid) async {
     final order = await _loadOrder(uuid);
     if (order == null) {
-      _snack(context, 'Pedido não encontrado neste aparelho.');
+      _snack(context, 'Pedido não encontrado. Sincronize novamente.');
       return;
     }
     final doc = await PedidoPdf.build(order);
@@ -44,7 +44,7 @@ class PedidoDocumentActions {
   static Future<void> compartilhar(BuildContext context, String uuid) async {
     final order = await _loadOrder(uuid);
     if (order == null) {
-      _snack(context, 'Pedido não encontrado neste aparelho.');
+      _snack(context, 'Pedido não encontrado. Sincronize novamente.');
       return;
     }
     final file = await _writeTempPdf(order);
