@@ -204,13 +204,18 @@ class SyncService extends ChangeNotifier {
       await _db.deleteAll('historico_orcamentos');
     }
     await _db.upsertAll('historico_vendas', data['historico_vendas'] ?? [], (r) => {
-          'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
+          'id': r['id'], 'numero': r['numero'], 'numero_orcamento': r['numero_orcamento'],
+          'data': r['data'], 'cliente_id': r['cliente_id'],
           'total': _d(r['total']), 'status': r['status'], 'tipo': r['tipo'],
         });
     await _db.upsertAll('historico_orcamentos', data['historico_orcamentos'] ?? [], (r) => {
           'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
           'total': _d(r['total']), 'status': r['status'],
         });
+
+    for (final row in (data['pedidos_fv'] as List?) ?? const []) {
+      await _db.applyPedidoFvSync(Map<String, dynamic>.from(row as Map));
+    }
 
     if (data['_etag'] != null) {
       await _db.setMeta('pull_etag', data['_etag'] as String);
@@ -303,7 +308,12 @@ class SyncService extends ChangeNotifier {
       final uuid = m['uuid']?.toString();
       if (uuid == null) continue;
       if (m['status'] == 'importado') {
-        await _db.markOrder(uuid, 'enviado', numero: m['numero']?.toString());
+        await _db.markOrder(
+          uuid,
+          'enviado',
+          numero: m['numero']?.toString(),
+          numeroPedido: m['numero_pedido']?.toString(),
+        );
         enviados++;
       } else if (m['status'] == 'erro') {
         await _db.markOrder(uuid, 'erro', erro: m['erro']?.toString());

@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -50,6 +50,10 @@ class LocalDb {
         if (oldVersion < 8) {
           await db.execute('ALTER TABLE customers ADD COLUMN vendedor_fv_id INTEGER');
           await db.execute('ALTER TABLE customers ADD COLUMN vendedor_loja_id INTEGER');
+        }
+        if (oldVersion < 9) {
+          await db.execute('ALTER TABLE outbox_orders ADD COLUMN numero_pedido TEXT');
+          await db.execute('ALTER TABLE historico_vendas ADD COLUMN numero_orcamento TEXT');
         }
       },
       onCreate: (db, _) async {
@@ -94,7 +98,7 @@ class LocalDb {
           )''');
         await db.execute('''
           CREATE TABLE historico_vendas (
-            id INTEGER PRIMARY KEY, numero TEXT, data TEXT, cliente_id INTEGER,
+            id INTEGER PRIMARY KEY, numero TEXT, numero_orcamento TEXT, data TEXT, cliente_id INTEGER,
             total REAL, status TEXT, tipo TEXT
           )''');
         await db.execute(_createHistoricoOrcamentosSql);
@@ -109,6 +113,7 @@ class LocalDb {
             status TEXT,        -- pendente | enviado | erro | rascunho
             erro TEXT,
             numero TEXT,
+            numero_pedido TEXT,
             extra_json TEXT     -- campos comerciais (forma, condicao, frete, lista, pct)
           )''');
         await db.execute('''
@@ -214,14 +219,63 @@ class LocalDb {
         where: "status = ?", whereArgs: ['pendente'], orderBy: 'created_at');
   }
 
-  Future<void> markOrder(String uuid, String status, {String? erro, String? numero}) async {
+  Future<void> markOrder(String uuid, String status, {String? erro, String? numero, String? numeroPedido}) async {
     final database = await db;
+    final data = <String, dynamic>{'status': status, 'erro': erro};
+    if (numero != null) data['numero'] = numero;
+    if (numeroPedido != null) data['numero_pedido'] = numeroPedido;
     await database.update(
       'outbox_orders',
-      {'status': status, 'erro': erro, 'numero': numero},
+      data,
       where: 'uuid = ?',
       whereArgs: [uuid],
     );
+  }
+
+  /// Atualiza números/situação de pedidos já enviados (pull `pedidos_fv`).
+  Future<void> applyPedidoFvSync(Map<String, dynamic> row) async {
+    final uuid = (row['uuid'] ?? '').toString();
+    if (uuid.isEmpty) return;
+
+    final data = <String, dynamic>{};
+    final numero = row['numero'];
+    if (numero != null && numero.toString().isNotEmpty) {
+      data['numero'] = numero.toString();
+    }
+    final numeroPedido = row['numero_pedido'];
+    if (numeroPedido != null && numeroPedido.toString().isNotEmpty) {
+      data['numero_pedido'] = numeroPedido.toString();
+    }
+
+    final situacao = (row['situacao'] ?? '').toString();
+    if (situacao == 'faturado') {
+      data['status'] = 'faturado';
+    } else if (situacao == 'cancelado') {
+      data['status'] = 'cancelado';
+    }
+
+    if (data.isEmpty) return;
+
+    final database = await db;
+    await database.update(
+      'outbox_orders',
+      data,
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+  }
+
+  Future<Map<String, dynamic>?> outboxOrderByUuid(String uuid) async {
+    final database = await db;
+    final rows = await database.rawQuery(
+      'SELECT o.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.fone1, c.celular1, c.whatsapp '
+      'FROM outbox_orders o '
+      'LEFT JOIN customers c ON c.id = o.cliente_id '
+      'WHERE o.uuid = ? LIMIT 1',
+      [uuid],
+    );
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<int> pendingCount() async {

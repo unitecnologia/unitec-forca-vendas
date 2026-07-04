@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../documents/pedido_document_actions.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 
@@ -25,9 +26,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
   void initState() {
     super.initState();
     _carregar();
-    if (widget.tipoFiltro == 'orcamento') {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _sincronizar());
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sincronizar());
   }
 
   Future<void> _carregar() async {
@@ -36,15 +35,13 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final whereOutbox = tipo != null ? 'WHERE o.tipo = ?' : '';
     final args = tipo != null ? [tipo] : <Object?>[];
 
-    // Pedidos/orçamentos lançados neste aparelho (outbox).
     final outbox = await _db.query(
-      'SELECT o.uuid, o.numero, o.total, o.status, o.erro, o.created_at, c.nome_razao '
+      'SELECT o.uuid, o.numero, o.numero_pedido, o.total, o.status, o.erro, o.created_at, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
       '$whereOutbox ORDER BY o.created_at DESC LIMIT 300',
       args,
     );
 
-    // Histórico vindo do ERP (sobrevive a reinstalação após sync completo).
     final List<Map<String, dynamic>> historico;
     if (ehOrcamento) {
       historico = await _db.query(
@@ -55,24 +52,25 @@ class _PedidosScreenState extends State<PedidosScreen> {
     } else {
       final whereHist = tipo != null ? 'WHERE h.tipo = ?' : '';
       historico = await _db.query(
-        'SELECT h.numero, h.total, h.data, h.status, c.nome_razao '
+        'SELECT h.numero, h.numero_orcamento, h.total, h.data, h.status, c.nome_razao '
         'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
         '$whereHist ORDER BY h.data DESC LIMIT 500',
         args,
       );
     }
 
-    final numerosOutbox = <String>{
-      for (final o in outbox)
-        if ((o['numero'] ?? '').toString().isNotEmpty) (o['numero']).toString(),
+    final chavesOutbox = <String>{
+      for (final o in outbox) _chaveDedup(o['numero'], o['numero_pedido']),
     };
 
     final unified = <Map<String, dynamic>>[];
     for (final o in outbox) {
       unified.add({
         'fonte': 'outbox',
+        'uuid': o['uuid'],
         'nome_razao': o['nome_razao'],
         'numero': o['numero'],
+        'numero_pedido': o['numero_pedido'],
         'total': o['total'],
         'status': o['status'],
         'erro': o['erro'],
@@ -80,13 +78,16 @@ class _PedidosScreenState extends State<PedidosScreen> {
       });
     }
     for (final h in historico) {
-      final numero = (h['numero'] ?? '').toString();
-      // Evita duplicar uma venda que também está no outbox (já enviada).
-      if (numero.isNotEmpty && numerosOutbox.contains(numero)) continue;
+      final numeroPedido = ehOrcamento ? null : h['numero'];
+      final numeroDav = ehOrcamento ? h['numero'] : h['numero_orcamento'];
+      final chave = _chaveDedup(numeroDav, numeroPedido);
+      if (chave.isNotEmpty && chavesOutbox.contains(chave)) continue;
       unified.add({
         'fonte': 'erp',
+        'uuid': null,
         'nome_razao': h['nome_razao'],
-        'numero': h['numero'],
+        'numero': numeroDav,
+        'numero_pedido': numeroPedido,
         'total': h['total'],
         'status': (h['status'] ?? 'erp').toString(),
         'erro': '',
@@ -106,6 +107,14 @@ class _PedidosScreenState extends State<PedidosScreen> {
         _carregando = false;
       });
     }
+  }
+
+  static String _chaveDedup(Object? numeroDav, Object? numeroPedido) {
+    final dav = (numeroDav ?? '').toString();
+    final ped = (numeroPedido ?? '').toString();
+    if (ped.isNotEmpty) return 'ped:$ped';
+    if (dav.isNotEmpty) return 'dav:$dav';
+    return '';
   }
 
   Future<void> _sincronizar() async {
@@ -144,7 +153,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
                     padding: const EdgeInsets.all(12),
                     itemCount: _rows.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _PedidoCard(p: _rows[i]),
+                    itemBuilder: (_, i) => _PedidoCard(p: _rows[i], ehOrcamento: ehOrcamento),
                   ),
                 ),
     );
@@ -152,9 +161,10 @@ class _PedidosScreenState extends State<PedidosScreen> {
 }
 
 class _PedidoCard extends StatelessWidget {
-  const _PedidoCard({required this.p});
+  const _PedidoCard({required this.p, required this.ehOrcamento});
 
   final Map<String, dynamic> p;
+  final bool ehOrcamento;
 
   (Color, String, IconData) _status() {
     switch ((p['status'] ?? '').toString()) {
@@ -163,7 +173,7 @@ class _PedidoCard extends StatelessWidget {
       case 'erro':
         return (Colors.red, 'Erro', Icons.error_outline);
       case 'faturado':
-        return (Brand.blue, 'ERP', Icons.receipt_long_outlined);
+        return (Brand.blue, 'Faturado', Icons.receipt_long_outlined);
       case 'aberto':
         return (Brand.blue, 'Aberto', Icons.description_outlined);
       case 'fechado':
@@ -177,11 +187,67 @@ class _PedidoCard extends StatelessWidget {
     }
   }
 
+  String _linhaNumeros() {
+    final dav = (p['numero'] ?? '').toString();
+    final pedido = (p['numero_pedido'] ?? '').toString();
+    final data = brDate(p['created_at'] as String?);
+    final partes = <String>[];
+    if (dav.isNotEmpty) {
+      partes.add(ehOrcamento ? 'Nº $dav' : 'DAV $dav');
+    }
+    if (!ehOrcamento && pedido.isNotEmpty) {
+      partes.add('Ped. $pedido');
+    }
+    if (partes.isEmpty) return data;
+    return '${partes.join('  •  ')}  •  $data';
+  }
+
+  void _menuDocumentos(BuildContext context) {
+    final uuid = (p['uuid'] ?? '').toString();
+    if (uuid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF disponível apenas para pedidos lançados neste aparelho.')),
+      );
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined, color: Brand.blue),
+              title: const Text('Compartilhar PDF'),
+              subtitle: const Text('WhatsApp, e-mail, etc.'),
+              onTap: () {
+                Navigator.pop(ctx);
+                PedidoDocumentActions.compartilhar(context, uuid);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.print_outlined, color: Brand.blue),
+              title: const Text('Imprimir'),
+              onTap: () {
+                Navigator.pop(ctx);
+                PedidoDocumentActions.imprimir(context, uuid);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final (cor, label, icon) = _status();
-    final numero = (p['numero'] ?? '').toString();
     final erro = (p['erro'] ?? '').toString();
+    final uuid = (p['uuid'] ?? '').toString();
+    final temPdf = uuid.isNotEmpty;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -208,14 +274,29 @@ class _PedidoCard extends StatelessWidget {
                 decoration: BoxDecoration(color: cor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
                 child: Text(label, style: TextStyle(color: cor, fontWeight: FontWeight.w700, fontSize: 12)),
               ),
+              if (temPdf) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'PDF / imprimir',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: const Icon(Icons.more_vert, size: 20, color: Brand.blue),
+                  onPressed: () => _menuDocumentos(context),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(numero.isEmpty ? brDate(p['created_at'] as String?) : 'Nº $numero  •  ${brDate(p['created_at'] as String?)}',
-                  style: const TextStyle(color: Colors.black54, fontSize: 13)),
+              Expanded(
+                child: Text(
+                  _linhaNumeros(),
+                  style: const TextStyle(color: Colors.black54, fontSize: 13),
+                ),
+              ),
               Text(brMoney(p['total'] as num?),
                   style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
             ],
