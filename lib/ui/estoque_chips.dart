@@ -101,30 +101,14 @@ class EstoqueLinhaGrid extends StatelessWidget {
   final String codigo;
 
   static const double _gap = 3;
-  static const double _colCod = 46;
   static const double _colChip = 54;
 
   @override
   Widget build(BuildContext context) {
-    final unidade = (produto['unidade'] ?? '').toString().trim();
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: _colCod,
-          child: Text(
-            'Cód. $codigo',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
-              height: 1.1,
-            ),
-          ),
-        ),
+        _celula('Cód.', codigo, Brand.produtoCodigo, Colors.white),
         const SizedBox(width: _gap),
         _celula(
           'Atual',
@@ -145,13 +129,12 @@ class EstoqueLinhaGrid extends StatelessWidget {
           fmtEstoque(estoqueDisponivel(produto)),
           Brand.estoqueDisponivel,
           Colors.white,
-          unidade: unidade,
         ),
       ],
     );
   }
 
-  Widget _celula(String label, String valor, Color bg, Color fg, {String unidade = ''}) {
+  Widget _celula(String label, String valor, Color bg, Color fg) {
     return SizedBox(
       width: _colChip,
       child: Container(
@@ -195,18 +178,6 @@ class EstoqueLinhaGrid extends StatelessWidget {
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-            if (unidade.isNotEmpty)
-              Text(
-                unidade,
-                maxLines: 1,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 7,
-                  fontWeight: FontWeight.w700,
-                  color: fg.withValues(alpha: 0.88),
-                  height: 1,
-                ),
-              ),
           ],
         ),
       ),
