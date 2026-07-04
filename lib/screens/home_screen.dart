@@ -15,6 +15,7 @@ import 'novo_pedido_screen.dart';
 import 'pedidos_screen.dart';
 import 'produtos_screen.dart';
 import 'titulos_screen.dart';
+import 'relatorios_screen.dart';
 import 'visitas_sem_venda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -90,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _MenuItem('Títulos', Icons.payments_rounded, const Color(0xFF059669),
           onTap: () => _abrir(const TitulosScreen())),
       _MenuItem('Relatórios', Icons.bar_chart_rounded, const Color(0xFF475569),
-          onTap: () => _emDesenvolvimento('Relatórios'), emDesenvolvimento: true),
+          onTap: () => _abrir(const RelatoriosScreen())),
       _MenuItem('Sincronizar', Icons.sync_rounded, Brand.blue, onTap: () async {
         await state.sync.syncNow();
         await _atualizarContadores();
