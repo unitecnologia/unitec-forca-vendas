@@ -6,7 +6,25 @@ class Brand {
 
   static const Color blue = Color(0xFF1565C0);
   static const Color green = Color(0xFF2E7D32);
-  static const Color bg = Color(0xFFF1F4F8);
+
+  /// Canvas do app (cinza leve — destaca cards brancos).
+  static const Color bg = Color(0xFFE4E9EF);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color textPrimary = Color(0xFF16324A);
+
+  static List<BoxShadow> get cardShadow => const [
+        BoxShadow(
+          color: Color(0x1A0F172A),
+          blurRadius: 10,
+          offset: Offset(0, 3),
+        ),
+      ];
+
+  static BoxDecoration surfaceCard({double radius = 12}) => BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: cardShadow,
+      );
 
   /// Estoque — cores fortes para leitura rápida no app.
   static const Color estoqueAtual = Color(0xFF0F2847);

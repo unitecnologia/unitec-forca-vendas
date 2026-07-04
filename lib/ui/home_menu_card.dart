@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'brand.dart';
 
-/// Card do menu principal — estilo flat (Material 3), sem gradientes nos tiles.
+/// Card do menu — estilo “banco”: fundo branco sobre canvas cinza, ícone no canto.
 class HomeMenuCard extends StatelessWidget {
   const HomeMenuCard({
     super.key,
@@ -25,11 +25,11 @@ class HomeMenuCard extends StatelessWidget {
   final bool novo;
   final String? badge;
 
-  static const _radius = 16.0;
+  static const _radius = 12.0;
 
   @override
   Widget build(BuildContext context) {
-    final opacity = emDesenvolvimento ? 0.55 : 1.0;
+    final opacity = emDesenvolvimento ? 0.5 : 1.0;
 
     if (destaque) {
       return _PrimaryMenuCard(
@@ -45,49 +45,40 @@ class HomeMenuCard extends StatelessWidget {
     return Opacity(
       opacity: opacity,
       child: Material(
-        color: Colors.white,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        borderRadius: BorderRadius.circular(_radius),
+        color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(_radius),
-          splashColor: color.withValues(alpha: 0.08),
-          highlightColor: color.withValues(alpha: 0.04),
+          splashColor: Brand.blue.withValues(alpha: 0.06),
+          highlightColor: Brand.blue.withValues(alpha: 0.03),
           child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(_radius),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0F0F2847),
-                  blurRadius: 10,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
+            decoration: Brand.surfaceCard(radius: _radius),
             child: Stack(
               clipBehavior: Clip.hardEdge,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      HomeMenuIconFlat(icon: icon, color: color),
-                      const Spacer(),
-                      Text(
-                        label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E293B),
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Icon(
+                    icon,
+                    size: 28,
+                    color: color.withValues(alpha: 0.82),
+                  ),
+                ),
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: 12,
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Brand.textPrimary,
+                      height: 1.15,
+                    ),
                   ),
                 ),
                 ..._badges(),
@@ -101,22 +92,21 @@ class HomeMenuCard extends StatelessWidget {
 
   List<Widget> _badges() {
     if (novo) {
-      return [const Positioned(top: 10, right: 10, child: _HomeMenuTag(text: 'Novo', color: Brand.green))];
+      return [const Positioned(top: 8, left: 8, child: _HomeMenuTag(text: 'Novo', color: Brand.green))];
     }
     if (badge != null) {
-      return [Positioned(top: 10, right: 10, child: _HomeMenuTag(text: badge!, color: const Color(0xFFDC2626)))];
+      return [Positioned(top: 8, left: 8, child: _HomeMenuTag(text: badge!, color: const Color(0xFFDC2626)))];
     }
     if (emDesenvolvimento) {
       return [
         Positioned(
-          top: 10,
-          right: 10,
+          top: 8,
+          left: 8,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
               color: const Color(0xFFFFF7ED),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFDBA74)),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: const Text(
               'Em breve',
@@ -155,64 +145,49 @@ class _PrimaryMenuCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           child: Ink(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1E5A9E), Color(0xFF0F2847)],
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: Brand.cardShadow,
+              border: const Border(
+                left: BorderSide(color: Brand.blue, width: 4),
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x400F2847),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                ),
-              ],
             ),
             child: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(icon, color: Colors.white, size: 24),
-                      ),
-                      const Spacer(),
-                      Text(
-                        label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Icon(icon, size: 30, color: Brand.blue.withValues(alpha: 0.85)),
+                ),
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: 12,
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: Brand.textPrimary,
+                      height: 1.15,
+                    ),
                   ),
                 ),
                 if (badge != null)
                   Positioned(
-                    top: 10,
-                    right: 10,
+                    top: 8,
+                    left: 8,
                     child: _HomeMenuTag(text: badge!, color: const Color(0xFFDC2626)),
                   ),
                 if (emDesenvolvimento)
                   const Positioned(
-                    top: 10,
-                    right: 10,
+                    top: 8,
+                    left: 8,
                     child: _HomeMenuTag(text: 'Em breve', color: Color(0xFFEA580C)),
                   ),
               ],
@@ -224,7 +199,7 @@ class _PrimaryMenuCard extends StatelessWidget {
   }
 }
 
-/// Ícone plano em círculo suave — sem efeito 3D/glossy.
+/// Ícone em quadrado suave (resumo / sync).
 class HomeMenuIconFlat extends StatelessWidget {
   const HomeMenuIconFlat({super.key, required this.icon, required this.color, this.size = 44});
 
@@ -239,14 +214,13 @@ class HomeMenuIconFlat extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
-      child: Icon(icon, color: color, size: size * 0.52),
+      child: Icon(icon, color: color, size: size * 0.5),
     );
   }
 }
 
-/// Mantido para compatibilidade — delega ao ícone flat.
 class HomeMenuIcon3D extends StatelessWidget {
   const HomeMenuIcon3D({super.key, required this.icon, required this.color, this.size = 46});
 
@@ -272,7 +246,7 @@ class _HomeMenuTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,

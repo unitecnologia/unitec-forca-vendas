@@ -100,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Brand.bg,
       body: RefreshIndicator(
           onRefresh: () async {
             await state.sync.syncNow();
@@ -297,11 +297,7 @@ class _MiniStat extends StatelessWidget {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
+        decoration: Brand.surfaceCard(radius: 14),
         child: Column(
           children: [
             HomeMenuIconFlat(icon: icon, color: color, size: 36),
@@ -336,12 +332,8 @@ class _SyncCard extends StatelessWidget {
         final last = sync.lastSyncAt != null
             ? DateFormat('dd/MM HH:mm:ss').format(sync.lastSyncAt!)
             : '—';
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
+        return DecoratedBox(
+          decoration: Brand.surfaceCard(radius: 14),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
             leading: Container(
