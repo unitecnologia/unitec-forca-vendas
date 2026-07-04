@@ -74,7 +74,7 @@ class HomeMenuCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13.5,
+                      fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w700,
                       color: Brand.textPrimary,
                       height: 1.15,
@@ -171,7 +171,7 @@ class _PrimaryMenuCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13.5,
+                      fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w800,
                       color: Brand.textPrimary,
                       height: 1.15,

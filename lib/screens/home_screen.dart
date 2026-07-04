@@ -142,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.62,
+                  childAspectRatio: 1.45,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => HomeMenuCard(
