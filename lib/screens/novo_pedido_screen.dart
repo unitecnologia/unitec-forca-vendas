@@ -8,7 +8,9 @@ import 'package:uuid/uuid.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
+import '../ui/cliente_credito_check.dart';
 import '../ui/format.dart';
+import '../ui/pdv_alert_dialog.dart';
 import '../ui/produto_list_card.dart';
 import 'pedidos_screen.dart';
 import 'pix_qr_screen.dart';
@@ -106,6 +108,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   bool _enviarNaSync = true;
   bool _salvando = false;
   bool _sincDesconto = false;
+  bool _creditoLiberado = false;
 
   @override
   void initState() {
@@ -252,6 +255,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (escolhido != null) {
       setState(() {
         _cliente = escolhido;
+        _creditoLiberado = false;
         _preselecionarDoCliente();
       });
     }
@@ -346,6 +350,35 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Regra 3: havendo Prazo Avulso preenchido, o Prazo/Parcelamento some.
   bool get _avulsoPreenchido => _condicao.text.trim().isNotEmpty;
 
+  /// Boletos vencidos e/ou limite de crédito — padrão PDV com Sim/Não.
+  Future<bool> _confirmarCreditoCliente() async {
+    if (_tipo != 'pedido') return true;
+
+    final clienteId = (_cliente?['id'] as num?)?.toInt();
+    if (clienteId == null) return true;
+
+    final alerta = await ClienteCreditoCheck.verificar(
+      clienteId: clienteId,
+      totalPedido: _total,
+    );
+    if (alerta == null) {
+      _creditoLiberado = false;
+      return true;
+    }
+
+    if (!mounted) return false;
+
+    final liberar = await PdvAlertDialog.showSimNao(
+      context,
+      titulo: alerta.titulo,
+      detalhe: alerta.detalhe,
+      hint: ClienteCreditoAlerta.hint,
+    );
+
+    if (liberar) _creditoLiberado = true;
+    return liberar;
+  }
+
   Future<void> _salvar() async {
     if (_cliente == null || _itens.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -353,6 +386,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       );
       return;
     }
+
+    if (!await _confirmarCreditoCliente()) return;
 
     // Pedido pago no Pix: gera a cobrança e só persiste após confirmar.
     if (_tipo == 'pedido' && _isFormaPix()) {
@@ -437,6 +472,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'price_table_id': _listaPreco?['id'],
       'lista_preco_nome': _listaPreco?['descricao'],
       'frete': _freteValor,
+      if (_creditoLiberado) 'credito_liberado': true,
       if (pixExtra != null) ...pixExtra,
     };
 

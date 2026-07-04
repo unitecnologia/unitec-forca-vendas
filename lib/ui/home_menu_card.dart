@@ -76,7 +76,7 @@ class HomeMenuCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w700,
-                      color: Brand.textPrimary,
+                      color: Brand.blue,
                       height: 1.15,
                     ),
                   ),
@@ -147,14 +147,7 @@ class _PrimaryMenuCard extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Ink(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: Brand.cardShadow,
-              border: const Border(
-                left: BorderSide(color: Brand.blue, width: 4),
-              ),
-            ),
+            decoration: Brand.surfaceCard(radius: 12),
             child: Stack(
               children: [
                 Positioned(
@@ -173,7 +166,7 @@ class _PrimaryMenuCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w800,
-                      color: Brand.textPrimary,
+                      color: Brand.blue,
                       height: 1.15,
                     ),
                   ),
