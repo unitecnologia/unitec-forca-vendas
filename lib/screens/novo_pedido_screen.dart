@@ -8,8 +8,8 @@ import 'package:uuid/uuid.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../ui/brand.dart';
-import '../ui/estoque_chips.dart';
 import '../ui/format.dart';
+import '../ui/produto_list_card.dart';
 import 'pedidos_screen.dart';
 import 'pix_qr_screen.dart';
 
@@ -1807,7 +1807,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                           controller: controller,
                           padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
                           itemCount: _rows.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
                           itemBuilder: (_, i) =>
                               _isProdutos ? _produtoItem(_rows[i]) : _clienteItem(_rows[i]),
                         ),
@@ -1852,94 +1852,10 @@ class _BuscaSheetState extends State<_BuscaSheet> {
 
   Widget _produtoItem(Map<String, dynamic> r) {
     final base = context.read<AppState>().config.baseUrl;
-    final fotoUrl = _fotoBuscaUrl(base, r['foto_url']);
-    final preco = (r['preco_venda'] as num?)?.toDouble() ?? 0;
-    final descricao = (r['descricao'] ?? '').toString();
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.pop(context, r),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              _MiniFoto(url: fotoUrl),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(descricao,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                    const SizedBox(height: 4),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Cód. ${r['codigo'] ?? ''}',
-                          style: const TextStyle(color: Colors.black54, fontSize: 11.5),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: EstoqueChips(produto: r, compact: true),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(brMoney(preco),
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.
-String? _fotoBuscaUrl(String base, dynamic fotoUrl) {
-  final f = (fotoUrl ?? '').toString().trim();
-  if (f.isEmpty) return null;
-  if (f.startsWith('http://') || f.startsWith('https://')) return f;
-  final b = base.replaceFirst(RegExp(r'/+$'), '');
-  final path = f.startsWith('/') ? f : '/$f';
-  return '$b$path';
-}
-
-class _MiniFoto extends StatelessWidget {
-  const _MiniFoto({required this.url});
-
-  final String? url;
-
-  @override
-  Widget build(BuildContext context) {
-    const double size = 46;
-    final placeholder = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Brand.green.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Icon(Icons.inventory_2_outlined, color: Brand.green, size: 22),
-    );
-    if (url == null) return placeholder;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        url!,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-      ),
+    return ProdutoListCard(
+      produto: r,
+      baseUrl: base,
+      onTap: () => Navigator.pop(context, r),
     );
   }
 }
