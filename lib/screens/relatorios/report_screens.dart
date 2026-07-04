@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
+import '../../app_state.dart';
 import '../../reports/report_data.dart';
 import '../../ui/brand.dart';
 import '../../ui/format.dart';
@@ -93,7 +95,8 @@ class _ClientesAtendidosReportScreenState extends State<ClientesAtendidosReportS
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final rows = await ReportData.clientesAtendidos();
+    final vendedorId = context.read<AppState>().config.vendedorId;
+    final rows = await ReportData.clientesAtendidos(vendedorId);
     if (mounted) setState(() {
       _lista = rows;
       _carregando = false;
@@ -204,7 +207,8 @@ class _ClientesSemCompraReportScreenState extends State<ClientesSemCompraReportS
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final rows = await ReportData.clientesSemCompra(_dias);
+    final vendedorId = context.read<AppState>().config.vendedorId;
+    final rows = await ReportData.clientesSemCompra(_dias, vendedorId);
     if (mounted) setState(() {
       _lista = rows;
       _carregando = false;
@@ -310,7 +314,8 @@ class _ContasAbertoReportScreenState extends State<ContasAbertoReportScreen> {
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final rows = await ReportData.contasAbertoCarteira();
+    final vendedorId = context.read<AppState>().config.vendedorId;
+    final rows = await ReportData.contasAbertoCarteira(vendedorId);
     if (mounted) setState(() {
       _lista = rows;
       _carregando = false;
@@ -343,7 +348,7 @@ class _ContasAbertoReportScreenState extends State<ContasAbertoReportScreen> {
                       const Padding(
                         padding: EdgeInsets.only(bottom: 10),
                         child: Text(
-                          'Somente clientes que você vendeu, pediu ou visitou.',
+                          'Somente clientes da sua carteira Força de Vendas.',
                           style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                         ),
                       ),
@@ -403,7 +408,8 @@ class _VisitasReportScreenState extends State<VisitasReportScreen> {
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final rows = await ReportData.visitasRealizadas();
+    final vendedorId = context.read<AppState>().config.vendedorId;
+    final rows = await ReportData.visitasRealizadas(vendedorId);
     if (mounted) setState(() {
       _lista = rows;
       _carregando = false;

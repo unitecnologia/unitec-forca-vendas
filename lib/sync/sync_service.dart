@@ -159,6 +159,8 @@ class SyncService extends ChangeNotifier {
           'forma_pagamento_id': r['forma_pagamento_id'],
           'tabela_prazo_id': r['tabela_prazo_id'],
           'tabela_prazo_dias': r['tabela_prazo_dias'],
+          'vendedor_fv_id': r['vendedor_fv_id'],
+          'vendedor_loja_id': r['vendedor_loja_id'],
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
         });

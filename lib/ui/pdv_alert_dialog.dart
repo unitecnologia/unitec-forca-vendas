@@ -58,6 +58,7 @@ class PdvAlertDialog extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
+      barrierColor: const Color(0x2E0F3460),
       builder: (ctx) => PdvAlertDialog(
         titulo: titulo,
         detalhe: detalhe,

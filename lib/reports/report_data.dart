@@ -20,21 +20,14 @@ class ReportData {
 
   static DateTime startOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
 
-  /// Clientes que compraram, pediram ou foram visitados (aproximação de carteira).
-  static Future<Set<int>> carteiraClienteIds() async {
-    final ids = <int>{};
-    for (final sql in [
-      'SELECT DISTINCT cliente_id AS id FROM historico_vendas WHERE cliente_id IS NOT NULL',
-      "SELECT DISTINCT cliente_id AS id FROM outbox_orders WHERE cliente_id IS NOT NULL AND tipo = 'pedido' AND status IN ('pendente','enviado')",
-      'SELECT DISTINCT cliente_id AS id FROM visitas_sem_venda WHERE cliente_id IS NOT NULL',
-    ]) {
-      final rows = await _db.query(sql);
-      for (final r in rows) {
-        final id = (r['id'] as num?)?.toInt();
-        if (id != null && id > 0) ids.add(id);
-      }
-    }
-    return ids;
+  /// IDs dos clientes da carteira FV do vendedor logado.
+  static Future<Set<int>> carteiraClienteIds(int? vendedorId) async {
+    if (vendedorId == null) return {};
+    final rows = await _db.query(
+      'SELECT id FROM customers WHERE vendedor_fv_id = ?',
+      [vendedorId],
+    );
+    return rows.map((r) => (r['id'] as num).toInt()).toSet();
   }
 
   static Future<MinhasVendasResumo> minhasVendas() async {
@@ -80,11 +73,14 @@ class ReportData {
     );
   }
 
-  static Future<List<ClienteAtendido>> clientesAtendidos() async {
+  static Future<List<ClienteAtendido>> clientesAtendidos(int? vendedorId) async {
+    final carteira = await carteiraClienteIds(vendedorId);
+    if (carteira.isEmpty) return [];
+
     final map = <int, ClienteAtendido>{};
 
     void merge(int? id, {double addTotal = 0, int addPedidos = 0, String? dataCompra}) {
-      if (id == null || id <= 0) return;
+      if (id == null || id <= 0 || !carteira.contains(id)) return;
       final c = map.putIfAbsent(id, () => ClienteAtendido(clienteId: id));
       c.totalComprado += addTotal;
       c.qtdPedidos += addPedidos;
@@ -121,7 +117,7 @@ class ReportData {
     );
     for (final v in visitas) {
       final id = (v['cliente_id'] as num?)?.toInt();
-      if (id == null) continue;
+      if (id == null || !carteira.contains(id)) continue;
       map.putIfAbsent(id, () => ClienteAtendido(clienteId: id));
       map[id]!._atualizarUltimaVisita((v['created_at'] ?? '').toString());
     }
@@ -169,7 +165,8 @@ class ReportData {
     return lista;
   }
 
-  static Future<List<ClienteSemCompra>> clientesSemCompra(int diasMinimo) async {
+  static Future<List<ClienteSemCompra>> clientesSemCompra(int diasMinimo, int? vendedorId) async {
+    if (vendedorId == null) return [];
     final hoje = startOfDay(DateTime.now());
     final map = <int, ClienteSemCompra>{};
 
@@ -186,11 +183,19 @@ class ReportData {
       }
     }
 
+    final carteiraRows = await _db.query(
+      'SELECT id FROM customers WHERE vendedor_fv_id = ?',
+      [vendedorId],
+    );
+    final carteira = carteiraRows.map((r) => (r['id'] as num).toInt()).toSet();
+
     final vendas = await _db.query(
       'SELECT cliente_id, data FROM historico_vendas WHERE cliente_id IS NOT NULL',
     );
     for (final v in vendas) {
-      registrar((v['cliente_id'] as num?)?.toInt(), (v['data'] ?? '').toString());
+      final id = (v['cliente_id'] as num?)?.toInt();
+      if (id == null || !carteira.contains(id)) continue;
+      registrar(id, (v['data'] ?? '').toString());
     }
 
     final outbox = await _db.query(
@@ -198,7 +203,9 @@ class ReportData {
       "WHERE cliente_id IS NOT NULL AND tipo = 'pedido' AND status IN ('pendente','enviado')",
     );
     for (final o in outbox) {
-      registrar((o['cliente_id'] as num?)?.toInt(), (o['created_at'] ?? '').toString());
+      final id = (o['cliente_id'] as num?)?.toInt();
+      if (id == null || !carteira.contains(id)) continue;
+      registrar(id, (o['created_at'] ?? '').toString());
     }
 
     if (map.isEmpty) return [];
@@ -229,8 +236,8 @@ class ReportData {
     return filtrados;
   }
 
-  static Future<List<ContaAbertoCliente>> contasAbertoCarteira() async {
-    final carteira = await carteiraClienteIds();
+  static Future<List<ContaAbertoCliente>> contasAbertoCarteira(int? vendedorId) async {
+    final carteira = await carteiraClienteIds(vendedorId);
     if (carteira.isEmpty) return [];
 
     final ids = carteira.toList();
@@ -292,12 +299,15 @@ class ReportData {
     return lista;
   }
 
-  static Future<List<VisitaRegistro>> visitasRealizadas() async {
+  static Future<List<VisitaRegistro>> visitasRealizadas(int? vendedorId) async {
+    if (vendedorId == null) return [];
     final rows = await _db.query(
       'SELECT v.uuid, v.cliente_id, v.motivo, v.latitude, v.longitude, v.created_at, v.status, '
       'c.nome_razao, c.whatsapp, c.celular1, c.fone1 '
-      'FROM visitas_sem_venda v LEFT JOIN customers c ON c.id = v.cliente_id '
+      'FROM visitas_sem_venda v '
+      'INNER JOIN customers c ON c.id = v.cliente_id AND c.vendedor_fv_id = ? '
       'ORDER BY v.created_at DESC LIMIT 500',
+      [vendedorId],
     );
     return rows.map(VisitaRegistro.fromRow).toList();
   }

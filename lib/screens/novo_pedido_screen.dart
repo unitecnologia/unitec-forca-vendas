@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/cliente_credito_check.dart';
 import '../ui/format.dart';
@@ -1754,10 +1755,20 @@ class _BuscaSheetState extends State<_BuscaSheet> {
       }
       rows = await _db.query('SELECT * FROM products WHERE $where ORDER BY descricao LIMIT 100', args);
     } else {
-      rows = await _db.query(
-        'SELECT * FROM ${widget.tabela} WHERE ${widget.campoNome} LIKE ? OR codigo LIKE ? ORDER BY ${widget.campoNome} LIMIT 60',
-        [like, like],
-      );
+      final vendedorId = context.read<AppState>().config.vendedorId;
+      if (widget.tabela == 'customers') {
+        rows = await _db.query(
+          "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
+          "AND (${widget.campoNome} LIKE ? OR codigo LIKE ? OR apelido_fantasia LIKE ? OR cpf_cnpj LIKE ?) "
+          'ORDER BY ${widget.campoNome} LIMIT 60',
+          [...FvCarteira.args(vendedorId), like, like, like, like],
+        );
+      } else {
+        rows = await _db.query(
+          'SELECT * FROM ${widget.tabela} WHERE ${widget.campoNome} LIKE ? OR codigo LIKE ? ORDER BY ${widget.campoNome} LIMIT 60',
+          [like, like],
+        );
+      }
     }
     if (mounted) setState(() => _rows = rows);
   }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 
@@ -50,9 +53,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final hoje = DateTime.now();
     final hojeStr =
         '${hoje.year}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
+    final vendedorId = context.read<AppState>().config.vendedorId;
 
     _produtos = await _scalarInt('SELECT COUNT(*) FROM products WHERE ativo = 1');
-    _clientes = await _scalarInt('SELECT COUNT(*) FROM customers WHERE ativo = 1');
+    _clientes = await _scalarInt(
+      'SELECT COUNT(*) FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)}',
+      FvCarteira.args(vendedorId),
+    );
     _pedPendentes = await _scalarInt("SELECT COUNT(*) FROM outbox_orders WHERE status = 'pendente'");
     _pedEnviados = await _scalarInt("SELECT COUNT(*) FROM outbox_orders WHERE status = 'enviado'");
     _pedErro = await _scalarInt("SELECT COUNT(*) FROM outbox_orders WHERE status = 'erro'");

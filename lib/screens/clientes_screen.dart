@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 import 'novo_cliente_screen.dart';
@@ -27,10 +30,12 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   Future<void> _buscar() async {
     final like = '%${_termo.trim()}%';
+    final vendedorId = context.read<AppState>().config.vendedorId;
     final rows = await _db.query(
-      "SELECT * FROM customers WHERE ativo = 1 AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
+      "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
+      "AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
       'ORDER BY nome_razao LIMIT 200',
-      [like, like, like, like],
+      [...FvCarteira.args(vendedorId), like, like, like, like],
     );
     if (mounted) {
       setState(() {

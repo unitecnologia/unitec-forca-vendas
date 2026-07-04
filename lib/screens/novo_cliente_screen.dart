@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/cpf_cnpj_formatter.dart';
 
@@ -144,6 +145,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     final agora = DateTime.now().toIso8601String();
     final localId = _db.newLocalId();
     final limite = double.tryParse(_t(_limite).replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+    final vendedorId = context.read<AppState>().config.vendedorId;
 
     final row = <String, dynamic>{
       'id': localId,
@@ -163,6 +165,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
       'whatsapp': _t(_celular),
       'limite_credito': limite,
       'dia_pgto': null,
+      'vendedor_fv_id': vendedorId,
       'ativo': 1,
       'updated_at': agora,
     };

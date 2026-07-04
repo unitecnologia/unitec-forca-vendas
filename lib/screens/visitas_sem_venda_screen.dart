@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 
@@ -343,10 +344,12 @@ class _ClienteBuscaSheetState extends State<_ClienteBuscaSheet> {
   Future<void> _buscar() async {
     setState(() => _buscando = true);
     final like = '%${widget.termo.value.trim()}%';
+    final vendedorId = context.read<AppState>().config.vendedorId;
     final rows = await _db.query(
-      "SELECT * FROM customers WHERE ativo = 1 AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
+      "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
+      "AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
       'ORDER BY nome_razao LIMIT 80',
-      [like, like, like, like],
+      [...FvCarteira.args(vendedorId), like, like, like, like],
     );
     if (mounted) {
       setState(() {

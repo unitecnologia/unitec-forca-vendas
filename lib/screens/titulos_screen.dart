@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
 import 'pix_qr_screen.dart';
@@ -30,12 +31,15 @@ class _TitulosScreenState extends State<TitulosScreen> {
 
   Future<void> _carregar() async {
     final like = '%${_termo.trim()}%';
+    final vendedorId = context.read<AppState>().config.vendedorId;
+    final carteiraSql = FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id');
+    final carteiraArgs = FvCarteira.args(vendedorId);
     final rows = await _db.query(
       'SELECT f.*, c.nome_razao, c.limite_credito FROM financeiro f '
-      'LEFT JOIN customers c ON c.id = f.cliente_id '
-      'WHERE f.saldo > 0 AND (c.nome_razao LIKE ? OR f.documento LIKE ? OR f.numero LIKE ?) '
+      'INNER JOIN customers c ON c.id = f.cliente_id '
+      'WHERE f.saldo > 0 AND $carteiraSql AND (c.nome_razao LIKE ? OR f.documento LIKE ? OR f.numero LIKE ?) '
       'ORDER BY c.nome_razao, f.vencimento',
-      [like, like, like],
+      [...carteiraArgs, like, like, like],
     );
 
     final hoje = DateTime.now();

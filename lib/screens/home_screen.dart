@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../app_info.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../fv_carteira.dart';
 import '../sync/sync_service.dart';
 import '../ui/brand.dart';
 import '../ui/home_menu_card.dart';
@@ -38,8 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _atualizarContadores() async {
     final db = LocalDb.instance;
+    final vendedorId = context.read<AppState>().config.vendedorId;
     final pr = await db.count('products');
-    final cl = await db.count('customers');
+    final clRows = await db.query(
+      'SELECT COUNT(*) AS c FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)}',
+      FvCarteira.args(vendedorId),
+    );
+    final cl = (clRows.first['c'] as num?)?.toInt() ?? 0;
     final pe = await db.pendingCount();
     if (mounted) {
       setState(() {
