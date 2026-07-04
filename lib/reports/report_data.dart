@@ -349,7 +349,7 @@ class MinhasVendasResumo {
   final int qtdSemana;
   final int qtdMes;
 
-  double ticketMedioMes => qtdMes > 0 ? totalMes / qtdMes : 0;
+  double get ticketMedioMes => qtdMes > 0 ? totalMes / qtdMes : 0;
 }
 
 class ClienteAtendido {
