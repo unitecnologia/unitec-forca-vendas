@@ -510,41 +510,42 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(
-        title: Text(_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
+        title: Text(
+          _tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido',
+          style: TextStyle(fontSize: 20 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+        ),
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(50),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 0, 10, 7),
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: const Color(0xE6F1F5F9),
-                borderRadius: BorderRadius.circular(12),
+          preferredSize: const Size.fromHeight(78),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: _progressSteps(),
               ),
-              child: TabBar(
-                controller: _tabController,
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                splashBorderRadius: BorderRadius.circular(9),
-                indicator: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(9),
-                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1))],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent,
+                  indicatorWeight: 3.5,
+                  indicatorColor: Colors.white,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 10),
+                  labelStyle: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w800),
+                  unselectedLabelStyle: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w600),
+                  tabs: const [
+                    Tab(height: 36, text: 'Dados'),
+                    Tab(height: 36, text: 'Itens'),
+                    Tab(height: 36, text: 'Resumo'),
+                  ],
                 ),
-                labelColor: Colors.black,
-                unselectedLabelColor: Colors.black,
-                labelPadding: EdgeInsets.zero,
-                labelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w800),
-                unselectedLabelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w600),
-                tabs: const [
-                  Tab(height: 38, child: _TabContent(icon: Icons.assignment_outlined, text: 'Dados')),
-                  Tab(height: 38, child: _TabContent(icon: Icons.list_alt_outlined, text: 'Itens')),
-                  Tab(height: 38, child: _TabContent(icon: Icons.receipt_long_outlined, text: 'Resumo')),
-                ],
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -561,27 +562,75 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
+  Widget _progressSteps() {
+    final step = _tabController.index;
+    final labels = ['Dados', 'Itens', 'Resumo'];
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(
+              child: Container(
+                height: 2,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                color: i <= step ? Colors.white : Colors.white24,
+              ),
+            ),
+          _progressDot(i, step, labels[i]),
+        ],
+      ],
+    );
+  }
+
+  Widget _progressDot(int i, int step, String label) {
+    final done = i < step;
+    final current = i == step;
+    return GestureDetector(
+      onTap: () => _tabController.animateTo(i),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: done || current ? Colors.white : Colors.white24,
+              shape: BoxShape.circle,
+            ),
+            child: done
+                ? const Icon(Icons.check, size: 14, color: Brand.blue)
+                : Text('${i + 1}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: current ? Brand.blue : Colors.white70,
+                    )),
+          ),
+          const SizedBox(height: 2),
+          Text(label,
+              style: TextStyle(
+                fontSize: 10 + Brand.textBump01cm,
+                fontWeight: current ? FontWeight.w800 : FontWeight.w500,
+                color: current || done ? Colors.white : Colors.white60,
+              )),
+        ],
+      ),
+    );
+  }
+
   // ---- Aba 1: Dados ------------------------------------------------------
   Widget _abaDados() {
     final limite = (_cliente?['limite_credito'] as num?)?.toDouble();
-    final endereco = _cliente == null
-        ? null
-        : [_cliente!['endereco'], _cliente!['numero'], _cliente!['bairro'], _cliente!['cidade_nome'], _cliente!['uf']]
-            .where((e) => (e ?? '').toString().trim().isNotEmpty)
-            .join(', ');
     final empresa = context.read<AppState>().config.empresaNome;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
-        _infoTile(icon: Icons.store_outlined, label: 'Filial / Unidade', value: empresa.isEmpty ? 'Empresa padrão' : empresa),
+        _filialCard(empresa.isEmpty ? 'Empresa padrão' : empresa),
+        const SizedBox(height: 4),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
-          _infoTile(
-            icon: Icons.tag,
-            label: 'Número do Pedido',
-            value: 'Gerado no ERP ao sincronizar',
-            muted: true,
-          ),
+          _pedidoNumeroCard(),
           _field('Tipo de Pedido *', _dropdown<String>(
             value: _tipo,
             items: const {'pedido': '1 - Pedido', 'orcamento': '2 - Orçamento'},
@@ -602,26 +651,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           )),
           _infoTile(icon: Icons.event_outlined, label: 'Data de Emissão', value: _dataHoraAgora()),
         ]),
-        _section(icon: Icons.person_outline, titulo: 'Cliente & Entrega', filhos: [
-          _field(
-            'Cliente *',
-            _selectorBox(
-              texto: _cliente == null ? 'Selecionar cliente' : (_cliente!['nome_razao'] ?? '').toString(),
-              icon: Icons.person_search_outlined,
-              onTap: _selecionarCliente,
-              destaque: _cliente != null,
-            ),
-            trailing: limite != null
-                ? Text('Limite: ${brMoney(limite)}',
-                    style: TextStyle(fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w600, color: Colors.black54))
-                : null,
-          ),
-          _infoTile(
-            icon: Icons.local_shipping_outlined,
-            label: 'Endereço de entrega',
-            value: (endereco == null || endereco.isEmpty) ? 'Selecione o cliente' : endereco,
-            muted: endereco == null || endereco.isEmpty,
-          ),
+        _section(icon: Icons.person_outline, titulo: 'Cliente', filhos: [
+          _clienteCard(limite: limite),
+        ]),
+        _section(icon: Icons.local_shipping_outlined, titulo: 'Entrega', filhos: [
+          _enderecoCard(),
         ]),
         _section(icon: Icons.payments_outlined, titulo: 'Pagamento', filhos: [
           _field('Forma de Pagamento *', _dropdown<int?>(
@@ -639,7 +673,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     hint: _avulsoBloqueado ? 'Definido no cadastro do cliente' : 'Ex.: 30,60,90',
                     enabled: !_avulsoBloqueado,
                     onChanged: (v) => setState(() {
-                          // Regra 3: ao usar prazo avulso, zera o parcelamento.
                           if (v.trim().isNotEmpty) {
                             _tabelaPrazoId = null;
                             _tabelaDias = null;
@@ -1034,51 +1067,332 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   // ---- Componentes do redesign (cards / campos / info tiles) -------------
-  Widget _section({required IconData icon, required String titulo, required List<Widget> filhos}) {
+  Widget _filialCard(String nome) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          colors: [Brand.blue, Color.lerp(Brand.blue, const Color(0xFF0D47A1), 0.35)!],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [BoxShadow(color: Color(0x0F1E293B), blurRadius: 10, offset: Offset(0, 3))],
+        boxShadow: const [BoxShadow(color: Color(0x331565C0), blurRadius: 12, offset: Offset(0, 4))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F0FB),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 16, color: Brand.blue),
-              ),
-              const SizedBox(width: 8),
-              Text(titulo,
-                  style: TextStyle(fontSize: 13.5 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Colors.black)),
-            ],
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 26),
           ),
-          const SizedBox(height: 12),
-          ...filhos,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('FILIAL',
+                    style: TextStyle(
+                        fontSize: 11 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                        color: Colors.white70)),
+                const SizedBox(height: 2),
+                Text(nome,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 17 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        height: 1.15)),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
+  Widget _pedidoNumeroCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F0FB),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.tag_rounded, size: 22, color: Brand.blue),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Pedido',
+                    style: TextStyle(
+                        fontSize: 12 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B))),
+                const SizedBox(height: 2),
+                Text('Será gerado automaticamente ao sincronizar',
+                    style: TextStyle(
+                        fontSize: 14 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF475569),
+                        height: 1.2)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _clienteCard({double? limite}) {
+    if (_cliente == null) {
+      return _field(
+        'Cliente *',
+        _selectorBox(
+          texto: 'Selecionar cliente',
+          icon: Icons.person_add_alt_1_rounded,
+          onTap: _selecionarCliente,
+        ),
+      );
+    }
+
+    final nome = (_cliente!['nome_razao'] ?? 'Cliente').toString();
+    final doc = (_cliente!['cpf_cnpj'] ?? '').toString().trim();
+    final rua = [
+      _cliente!['endereco'],
+      _cliente!['numero'],
+    ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(', ');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: _selecionarCliente,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FB),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.person_rounded, size: 24, color: Brand.blue),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(nome,
+                          style: TextStyle(
+                              fontSize: 16 + Brand.textBump01cm,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              height: 1.2)),
+                      if (doc.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(doc,
+                            style: TextStyle(
+                                fontSize: 13 + Brand.textBump01cm,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B))),
+                      ],
+                      if (rua.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(rua,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12 + Brand.textBump01cm,
+                                color: Color(0xFF94A3B8))),
+                      ],
+                      if (limite != null) ...[
+                        const SizedBox(height: 6),
+                        Text('Limite: ${brMoney(limite)}',
+                            style: TextStyle(
+                                fontSize: 12 + Brand.textBump01cm,
+                                fontWeight: FontWeight.w700,
+                                color: Brand.blue)),
+                      ],
+                    ],
+                  ),
+                ),
+                const Icon(Icons.swap_horiz_rounded, color: Brand.blue, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _enderecoCard() {
+    if (_cliente == null) {
+      return _infoTile(
+        icon: Icons.place_outlined,
+        label: 'Endereço de entrega',
+        value: 'Selecione o cliente',
+        muted: true,
+      );
+    }
+
+    final rua = [
+      _cliente!['endereco'],
+      _cliente!['numero'],
+    ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(', ');
+    final bairro = (_cliente!['bairro'] ?? '').toString().trim();
+    final cidade = (_cliente!['cidade_nome'] ?? '').toString().trim();
+    final uf = (_cliente!['uf'] ?? '').toString().trim().toUpperCase();
+    final linhas = <String>[
+      if (rua.isNotEmpty) rua,
+      if (bairro.isNotEmpty) bairro,
+      if (cidade.isNotEmpty || uf.isNotEmpty) [cidade, uf].where((e) => e.isNotEmpty).join(' — '),
+    ];
+
+    if (linhas.isEmpty) {
+      return _infoTile(
+        icon: Icons.place_outlined,
+        label: 'Endereço de entrega',
+        value: 'Sem endereço cadastrado',
+        muted: true,
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F0FB),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.place_rounded, size: 22, color: Brand.blue),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Entrega',
+                    style: TextStyle(
+                        fontSize: 12 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B))),
+                const SizedBox(height: 4),
+                for (final linha in linhas)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(linha,
+                        style: TextStyle(
+                            fontSize: 15 + Brand.textBump01cm,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E293B),
+                            height: 1.25)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _section({required IconData icon, required String titulo, required List<Widget> filhos}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8E8E8)),
+        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 3))],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: Brand.blue),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 16, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8F0FB),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(icon, size: 22, color: Brand.blue),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(titulo,
+                              style: TextStyle(
+                                  fontSize: 17 + Brand.textBump01cm,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0F172A))),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    ...filhos,
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _fieldCaption(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: Text(t.toUpperCase(),
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(t,
             style: TextStyle(
-                fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF64748B))),
+                fontSize: 12 + Brand.textBump01cm,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B))),
       );
 
   Widget _field(String caption, Widget control, {Widget? trailing}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1087,7 +1401,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               : Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [_fieldCaption(caption), Padding(padding: const EdgeInsets.only(bottom: 5), child: trailing)],
+                  children: [_fieldCaption(caption), Padding(padding: const EdgeInsets.only(bottom: 8), child: trailing)],
                 ),
           control,
         ],
@@ -1098,41 +1412,37 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _infoTile({required IconData icon, required String label, required String value, bool muted = false}) {
     return Container(
       width: double.infinity,
-      height: 54,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      alignment: Alignment.centerLeft,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF94A3B8)),
-          const SizedBox(width: 10),
+          Icon(icon, size: 22, color: muted ? const Color(0xFF94A3B8) : Brand.blue),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(label.toUpperCase(),
+                Text(label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 10 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
-                        color: const Color(0xFF94A3B8))),
-                const SizedBox(height: 2),
-                Text(value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 13.5 + Brand.textBump01cm,
+                        fontSize: 12 + Brand.textBump01cm,
                         fontWeight: FontWeight.w600,
-                        color: muted ? const Color(0xFF94A3B8) : const Color(0xFF1E293B))),
+                        color: const Color(0xFF64748B))),
+                const SizedBox(height: 3),
+                Text(value,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 15 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w700,
+                        color: muted ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                        height: 1.2)),
               ],
             ),
           ),
@@ -1143,9 +1453,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
 
   Widget _tituloSecao(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 10, top: 4),
         child: Text(t,
-            style: TextStyle(fontSize: 15 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Colors.black)),
+            style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
       );
 
   Widget _selectorBox({
@@ -1271,30 +1581,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                   fontWeight: FontWeight.w800,
                   fontSize: (destaque ? (compacto ? 16 : 17) : (compacto ? 13 : 14)) + Brand.textBump01cm,
                   color: valorColor ?? (destaque ? Brand.green : const Color(0xFF263238)))),
-        ],
-      ),
-    );
-  }
-}
-
-/// Conteúdo compacto de cada aba (ícone + texto numa linha).
-class _TabContent extends StatelessWidget {
-  const _TabContent({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 5),
-          Text(text),
         ],
       ),
     );
