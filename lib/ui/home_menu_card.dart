@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'brand.dart';
 
-/// Card do menu — estilo “banco”: fundo branco sobre canvas cinza, ícone no canto.
+/// Card do menu ÔÇö estilo ÔÇ£bancoÔÇØ: fundo branco sobre canvas cinza, ├¡cone no canto.
 class HomeMenuCard extends StatelessWidget {
   const HomeMenuCard({
     super.key,
@@ -76,7 +76,7 @@ class HomeMenuCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w700,
-                      color: Brand.blue,
+                      color: Colors.black,
                       height: 1.15,
                     ),
                   ),
@@ -166,7 +166,7 @@ class _PrimaryMenuCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: Brand.homeMenuLabelSize,
                       fontWeight: FontWeight.w800,
-                      color: Brand.blue,
+                      color: Colors.black,
                       height: 1.15,
                     ),
                   ),
@@ -192,7 +192,7 @@ class _PrimaryMenuCard extends StatelessWidget {
   }
 }
 
-/// Ícone em quadrado suave (resumo / sync).
+/// ├ìcone em quadrado suave (resumo / sync).
 class HomeMenuIconFlat extends StatelessWidget {
   const HomeMenuIconFlat({super.key, required this.icon, required this.color, this.size = 44});
 
