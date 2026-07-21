@@ -144,6 +144,7 @@ class SyncService extends ChangeNotifier {
           'nome_razao': r['nome_razao'],
           'apelido_fantasia': r['apelido_fantasia'],
           'cpf_cnpj': r['cpf_cnpj'],
+          'rg_ie': r['rg_ie'],
           'endereco': r['endereco'],
           'numero': r['numero'],
           'bairro': r['bairro'],

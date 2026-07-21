@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -8,8 +9,8 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
-import '../fv_carteira.dart';
 import '../ui/brand.dart';
+import '../ui/cnpj_lookup.dart';
 import '../ui/cpf_cnpj_formatter.dart';
 
 /// Cadastro rápido de um novo cliente direto no aparelho.
@@ -31,6 +32,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
   final _nome = TextEditingController();
   final _fantasia = TextEditingController();
   final _cpfCnpj = TextEditingController();
+  final _ie = TextEditingController();
   final _celular = TextEditingController();
   final _fone = TextEditingController();
   final _email = TextEditingController();
@@ -41,15 +43,41 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
   final _uf = TextEditingController();
   final _cep = TextEditingController();
   final _limite = TextEditingController();
+  final _diaPgto = TextEditingController();
+
+  List<Map<String, dynamic>> _formas = [];
+  List<Map<String, dynamic>> _tabelas = [];
+  int? _formaId;
+  int? _tabelaPrazoId;
+  String? _tabelaDias;
 
   bool _salvando = false;
   bool _consultandoCnpj = false;
 
   @override
+  void initState() {
+    super.initState();
+    _carregarFormas();
+  }
+
+  @override
   void dispose() {
     for (final c in [
-      _nome, _fantasia, _cpfCnpj, _celular, _fone, _email,
-      _endereco, _numero, _bairro, _cidade, _uf, _cep, _limite,
+      _nome,
+      _fantasia,
+      _cpfCnpj,
+      _ie,
+      _celular,
+      _fone,
+      _email,
+      _endereco,
+      _numero,
+      _bairro,
+      _cidade,
+      _uf,
+      _cep,
+      _limite,
+      _diaPgto,
     ]) {
       c.dispose();
     }
@@ -62,6 +90,46 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     final text = (value ?? '').toString().trim();
     if (text.isNotEmpty) {
       c.text = text;
+    }
+  }
+
+  Future<void> _carregarFormas() async {
+    final rows = await _db.query('SELECT * FROM formas_pagamento ORDER BY codigo');
+    if (!mounted) return;
+    setState(() => _formas = rows);
+  }
+
+  Map<String, dynamic>? _formaById(int? id) {
+    for (final f in _formas) {
+      if (f['id'] == id) return f;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _tabelaById(int? id) {
+    for (final t in _tabelas) {
+      if (t['id'] == id) return t;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _parseTabelas(dynamic json) {
+    try {
+      final decoded = jsonDecode((json ?? '[]').toString());
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  void _aplicarForma(int? id) {
+    final f = _formaById(id);
+    _formaId = id;
+    _tabelas = _parseTabelas(f?['tabelas_json']);
+    if (_tabelaById(_tabelaPrazoId) == null) {
+      _tabelaPrazoId = null;
+      _tabelaDias = null;
     }
   }
 
@@ -99,13 +167,16 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     setState(() => _consultandoCnpj = true);
 
     try {
-      final data = await state.api.lookupCnpj(digits);
+      final data = await CnpjLookup(state.api).lookup(digits);
       _aplicarConsultaCnpj(data);
       if (!mounted) return;
       _avisa('Dados da empresa preenchidos automaticamente.', sucesso: true);
     } on ApiException catch (e) {
       if (!mounted) return;
       _avisa(e.message);
+    } on TimeoutException {
+      if (!mounted) return;
+      _avisa('A consulta demorou demais. Verifique a internet e tente novamente.');
     } catch (e) {
       if (!mounted) return;
       _avisa('Não foi possível consultar o CNPJ: $e');
@@ -118,6 +189,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     _setIfFilled(_cpfCnpj, data['cpf_cnpj']);
     _setIfFilled(_nome, data['nome_razao']);
     _setIfFilled(_fantasia, data['apelido_fantasia']);
+    _setIfFilled(_ie, data['rg_ie'] ?? data['inscricao_estadual']);
     _setIfFilled(_cep, data['cep']);
     _setIfFilled(_endereco, data['endereco']);
     _setIfFilled(_numero, data['numero']);
@@ -145,6 +217,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     final agora = DateTime.now().toIso8601String();
     final localId = _db.newLocalId();
     final limite = double.tryParse(_t(_limite).replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+    final diaPgto = int.tryParse(_t(_diaPgto));
     final vendedorId = context.read<AppState>().config.vendedorId;
 
     final row = <String, dynamic>{
@@ -153,6 +226,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
       'nome_razao': _t(_nome),
       'apelido_fantasia': _t(_fantasia),
       'cpf_cnpj': _t(_cpfCnpj),
+      'rg_ie': _t(_ie).isEmpty ? null : _t(_ie).toUpperCase(),
       'endereco': _t(_endereco),
       'numero': _t(_numero),
       'bairro': _t(_bairro),
@@ -164,7 +238,10 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
       'celular1': _t(_celular),
       'whatsapp': _t(_celular),
       'limite_credito': limite,
-      'dia_pgto': null,
+      'dia_pgto': diaPgto,
+      'forma_pagamento_id': _formaId,
+      'tabela_prazo_id': _tabelaPrazoId,
+      'tabela_prazo_dias': _tabelaDias,
       'vendedor_fv_id': vendedorId,
       'ativo': 1,
       'updated_at': agora,
@@ -219,6 +296,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
             _campo(_nome, 'Nome / Razão social', obrigatorio: true, capitalizar: true),
             _campo(_fantasia, 'Apelido / Nome fantasia', capitalizar: true),
             _campoCpfCnpj(),
+            _campo(_ie, 'IE (Inscrição Estadual)', capitalizar: true),
             _secao('Contato'),
             _campo(_celular, 'Celular / WhatsApp', teclado: TextInputType.phone),
             _campo(_fone, 'Telefone fixo', teclado: TextInputType.phone),
@@ -248,6 +326,22 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
             _campo(_cep, 'CEP', teclado: TextInputType.number),
             _secao('Financeiro'),
             _campo(_limite, 'Limite de crédito (R\$)', teclado: const TextInputType.numberWithOptions(decimal: true)),
+            _dropdownForma(),
+            if (_tabelas.isNotEmpty) _dropdownTabela(),
+            _campo(
+              _diaPgto,
+              'Dia de pagamento',
+              teclado: TextInputType.number,
+              maxLength: 2,
+              formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
+              validator: (v) {
+                final t = (v ?? '').trim();
+                if (t.isEmpty) return null;
+                final n = int.tryParse(t);
+                if (n == null || n < 1 || n > 31) return 'Informe um dia entre 1 e 31.';
+                return null;
+              },
+            ),
           ],
         ),
       ),
@@ -320,11 +414,76 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     );
   }
 
+  Widget _dropdownForma() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DropdownButtonFormField<int?>(
+        value: _formaId,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Forma de pagamento',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        hint: Text(_formas.isEmpty ? 'Sincronize para carregar' : 'Selecione'),
+        items: [
+          const DropdownMenuItem<int?>(value: null, child: Text('Nenhuma')),
+          for (final f in _formas)
+            DropdownMenuItem<int?>(
+              value: f['id'] as int?,
+              child: Text('${f['codigo'] ?? ''} - ${f['descricao'] ?? ''}'.trim(),
+                  overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: (id) => setState(() => _aplicarForma(id)),
+      ),
+    );
+  }
+
+  Widget _dropdownTabela() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DropdownButtonFormField<int?>(
+        value: _tabelaPrazoId,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: 'Tabela / Prazo',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        hint: const Text('Selecione'),
+        items: [
+          const DropdownMenuItem<int?>(value: null, child: Text('À vista / nenhuma')),
+          for (final t in _tabelas)
+            DropdownMenuItem<int?>(
+              value: t['id'] as int?,
+              child: Text('${t['dias'] ?? ''} dias'.trim(), overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: (id) => setState(() {
+          _tabelaPrazoId = id;
+          _tabelaDias = _tabelaById(id)?['dias']?.toString();
+        }),
+      ),
+    );
+  }
+
   Widget _secao(String titulo) => Padding(
         padding: const EdgeInsets.only(top: 14, bottom: 6),
         child: Text(titulo,
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700, color: Brand.blue, letterSpacing: 0.3)),
+            style: TextStyle(
+                fontSize: 13 + Brand.textBump01cm,
+                fontWeight: FontWeight.w700,
+                color: Brand.blue,
+                letterSpacing: 0.3)),
       );
 
   Widget _campo(
@@ -335,6 +494,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     TextInputType? teclado,
     int? maxLength,
     List<TextInputFormatter>? formatters,
+    String? Function(String?)? validator,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -344,9 +504,10 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
         textCapitalization: capitalizar ? TextCapitalization.characters : TextCapitalization.none,
         maxLength: maxLength,
         inputFormatters: formatters,
-        validator: obrigatorio
-            ? (v) => (v == null || v.trim().isEmpty) ? 'Informe o $label.' : null
-            : null,
+        validator: validator ??
+            (obrigatorio
+                ? (v) => (v == null || v.trim().isEmpty) ? 'Informe o $label.' : null
+                : null),
         decoration: InputDecoration(
           labelText: obrigatorio ? '$label *' : label,
           counterText: '',

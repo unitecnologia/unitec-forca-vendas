@@ -15,6 +15,9 @@ class Brand {
   /// Rótulos dos cards do menu home (+2 mm sobre 13,5 sp).
   static const double homeMenuLabelSize = 13.5 + (2 * 160 / 25.4);
 
+  /// Incremento tipográfico de +0,10 cm (≈ 3,78 lp) sem alterar caixas/campos.
+  static const double textBump01cm = 0.10 * 37.79527559055118;
+
   static List<BoxShadow> get cardShadow => const [
         BoxShadow(
           color: Color(0x1A0F172A),

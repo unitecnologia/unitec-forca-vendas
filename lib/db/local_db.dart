@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 10,
+      version: 11,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -58,6 +58,9 @@ class LocalDb {
         if (oldVersion < 10) {
           await db.execute(_createPedidosFvCacheSql);
         }
+        if (oldVersion < 11) {
+          await db.execute('ALTER TABLE customers ADD COLUMN rg_ie TEXT');
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
@@ -73,7 +76,7 @@ class LocalDb {
         await db.execute('''
           CREATE TABLE customers (
             id INTEGER PRIMARY KEY,
-            codigo TEXT, nome_razao TEXT, apelido_fantasia TEXT, cpf_cnpj TEXT,
+            codigo TEXT, nome_razao TEXT, apelido_fantasia TEXT, cpf_cnpj TEXT, rg_ie TEXT,
             endereco TEXT, numero TEXT, bairro TEXT, cidade_nome TEXT, uf TEXT, cep TEXT,
             email TEXT, fone1 TEXT, celular1 TEXT, whatsapp TEXT,
             limite_credito REAL, dia_pgto INTEGER,

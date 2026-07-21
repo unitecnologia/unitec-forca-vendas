@@ -106,7 +106,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Map<String, dynamic>? _listaPreco;
   List<Map<String, dynamic>> _listasPreco = [];
-  bool _enviarNaSync = true;
   bool _salvando = false;
   bool _sincDesconto = false;
   bool _creditoLiberado = false;
@@ -432,7 +431,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (pago == true) {
       await _persistirPedido(
         uuid: uuid,
-        forcarEnvio: true,
         pixExtra: {'pix_pago': true, 'pix_cobranca_id': cobranca['id']},
       );
     } else {
@@ -448,7 +446,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Future<void> _persistirPedido({
     required String uuid,
     Map<String, dynamic>? pixExtra,
-    bool forcarEnvio = false,
   }) async {
     setState(() => _salvando = true);
 
@@ -477,8 +474,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       if (pixExtra != null) ...pixExtra,
     };
 
-    final enviar = _enviarNaSync || forcarEnvio;
-
     await _db.insertOutbox({
       'uuid': uuid,
       'cliente_id': _cliente!['id'],
@@ -490,21 +485,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'longitude': lng,
       'itens_json': itensJson,
       'created_at': DateTime.now().toUtc().toIso8601String(),
-      'status': enviar ? 'pendente' : 'rascunho',
+      'status': 'pendente',
       'erro': null,
       'numero': null,
       'extra_json': jsonEncode(extra),
     });
 
     if (!mounted) return;
-    if (enviar) {
-      context.read<AppState>().sync.syncNow();
-    }
+    context.read<AppState>().sync.syncNow();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(enviar
-          ? 'Pedido salvo. Será sincronizado automaticamente.'
-          : 'Pedido salvo como rascunho (não será enviado).')),
+      const SnackBar(content: Text('Pedido salvo. Será sincronizado automaticamente.')),
     );
 
     // Após salvar, vai para a lista de pedidos.
@@ -529,7 +520,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             child: Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
-                color: const Color(0x26FFFFFF),
+                color: const Color(0xE6F1F5F9),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: TabBar(
@@ -542,11 +533,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                   borderRadius: BorderRadius.circular(9),
                   boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1))],
                 ),
-                labelColor: Brand.blue,
-                unselectedLabelColor: Colors.white,
+                labelColor: Colors.black,
+                unselectedLabelColor: Colors.black,
                 labelPadding: EdgeInsets.zero,
-                labelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-                unselectedLabelStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                labelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w800),
+                unselectedLabelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w600),
                 tabs: const [
                   Tab(height: 38, child: _TabContent(icon: Icons.assignment_outlined, text: 'Dados')),
                   Tab(height: 38, child: _TabContent(icon: Icons.list_alt_outlined, text: 'Itens')),
@@ -583,7 +574,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 20),
       children: [
-        _envioCard(),
         _infoTile(icon: Icons.store_outlined, label: 'Filial / Unidade', value: empresa.isEmpty ? 'Empresa padrão' : empresa),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
           _infoTile(
@@ -623,7 +613,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             ),
             trailing: limite != null
                 ? Text('Limite: ${brMoney(limite)}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black54))
+                    style: TextStyle(fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w600, color: Colors.black54))
                 : null,
           ),
           _infoTile(
@@ -734,7 +724,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           child: FilledButton.icon(
             onPressed: _adicionarItem,
             icon: const Icon(Icons.add_rounded, size: 20),
-            label: const Text('Adicionar item'),
+            label: Text('Adicionar item',
+                style: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
             style: FilledButton.styleFrom(
               backgroundColor: Brand.blue,
               minimumSize: const Size.fromHeight(42),
@@ -751,7 +742,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     children: [
                       Icon(Icons.inventory_2_outlined, size: 40, color: Colors.grey.shade400),
                       const SizedBox(height: 6),
-                      Text('Nenhum item.', style: TextStyle(color: Colors.black.withValues(alpha: 0.45), fontSize: 13)),
+                      Text('Nenhum item.', style: TextStyle(color: Colors.black.withValues(alpha: 0.45), fontSize: 13 + Brand.textBump01cm)),
                     ],
                   ),
                 )
@@ -779,9 +770,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45))),
+        Text(label, style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black.withValues(alpha: 0.45))),
         const SizedBox(height: 2),
-        Text(valor, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF263238))),
+        Text(valor, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13 + Brand.textBump01cm, color: Color(0xFF263238))),
       ],
     );
   }
@@ -793,7 +784,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text('$label: $valor', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+      child: Text('$label: $valor', style: TextStyle(fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
@@ -891,18 +882,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('${i + 1}ª — ${_fmtData(venc)}',
-                      style: const TextStyle(
-                          fontSize: 13,
+                      style: TextStyle(
+                          fontSize: 13 + Brand.textBump01cm,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF37474F))),
                   Text(forma,
-                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                      style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black54)),
                 ],
               ),
             ),
             Text(brMoney(valor),
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w800, color: Brand.green)),
+                style: TextStyle(
+                    fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Brand.green)),
           ],
         ),
       ));
@@ -923,8 +914,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Text('$n parcela${n > 1 ? 's' : ''}',
-                style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w700, color: Brand.blue)),
+                style: TextStyle(
+                    fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w700, color: Brand.blue)),
           ),
           ...linhas,
         ],
@@ -948,9 +939,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Total', style: TextStyle(fontSize: 11, color: Colors.black54)),
+                  const Text('Total', style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black54)),
                   Text(brMoney(_total),
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Brand.green)),
+                      style: TextStyle(fontSize: 18 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Brand.green)),
                 ],
               ),
             ),
@@ -999,8 +990,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     for (var i = 0; i < dias.length; i++) {
       final venc = hoje.add(Duration(days: dias[i]));
       itens.add(Text('${i + 1}ª — ${_fmtData(venc)}',
-          style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF37474F))));
+          style: TextStyle(
+              fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w600, color: Color(0xFF37474F))));
     }
 
     final linhas = <Widget>[];
@@ -1033,7 +1024,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             const Padding(
               padding: EdgeInsets.only(bottom: 6),
               child: Text('Vencimentos',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Brand.blue)),
+                  style: TextStyle(fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w700, color: Brand.blue)),
             ),
             ...linhas,
           ],
@@ -1068,7 +1059,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               ),
               const SizedBox(width: 8),
               Text(titulo,
-                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Brand.blue)),
+                  style: TextStyle(fontSize: 13.5 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Colors.black)),
             ],
           ),
           const SizedBox(height: 12),
@@ -1081,8 +1072,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _fieldCaption(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 5),
         child: Text(t.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF64748B))),
+            style: TextStyle(
+                fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF64748B))),
       );
 
   Widget _field(String caption, Widget control, {Widget? trailing}) {
@@ -1107,8 +1098,10 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _infoTile({required IconData icon, required String label, required String value, bool muted = false}) {
     return Container(
       width: double.infinity,
+      height: 54,
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
@@ -1121,15 +1114,23 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(label.toUpperCase(),
-                    style: const TextStyle(
-                        fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: Color(0xFF94A3B8))),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 10 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                        color: const Color(0xFF94A3B8))),
                 const SizedBox(height: 2),
                 Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 13.5,
+                        fontSize: 13.5 + Brand.textBump01cm,
                         fontWeight: FontWeight.w600,
                         color: muted ? const Color(0xFF94A3B8) : const Color(0xFF1E293B))),
               ],
@@ -1140,53 +1141,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _envioCard() {
-    final on = _enviarNaSync;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: on ? const Color(0xFFE9F7EC) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: on ? const Color(0xFFB7E1C0) : const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: on ? Brand.green : const Color(0xFFCBD5E1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(on ? Icons.cloud_upload_outlined : Icons.cloud_off_outlined, size: 18, color: Colors.white),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Enviar na próxima sincronização',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
-                Text(on ? 'Será enviado ao ERP.' : 'Salvar como rascunho (não envia).',
-                    style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
-              ],
-            ),
-          ),
-          Switch(
-            value: on,
-            activeColor: Brand.green,
-            onChanged: (v) => setState(() => _enviarNaSync = v),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _tituloSecao(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(t,
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Brand.blue)),
+            style: TextStyle(fontSize: 15 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Colors.black)),
       );
 
   Widget _selectorBox({
@@ -1202,7 +1161,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: const Color(0xFFCBD5E1)),
@@ -1211,11 +1172,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             children: [
               Expanded(
                 child: Text(texto,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
+                        fontSize: 14 + Brand.textBump01cm,
                         fontWeight: destaque ? FontWeight.w700 : FontWeight.w400,
                         color: destaque ? Colors.black87 : Colors.black54)),
               ),
-              Icon(icon, color: Brand.blue),
+              Icon(icon, color: Brand.blue, size: 22),
             ],
           ),
         ),
@@ -1232,7 +1196,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final values = items.keys.toList();
     final safeValue = values.contains(value) ? value : null;
     return Container(
+      height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -1242,10 +1208,21 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         child: DropdownButton<T>(
           value: safeValue,
           isExpanded: true,
-          hint: Text(hint ?? 'Selecione'),
+          isDense: true,
+          icon: const Icon(Icons.arrow_drop_down, size: 22),
+          style: TextStyle(
+            fontSize: 14 + Brand.textBump01cm,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF1E293B),
+          ),
+          hint: Text(hint ?? 'Selecione',
+              style: TextStyle(fontSize: 14 + Brand.textBump01cm, color: Colors.black.withValues(alpha: 0.45))),
           items: [
             for (final entry in items.entries)
-              DropdownMenuItem<T>(value: entry.key, child: Text(entry.value)),
+              DropdownMenuItem<T>(
+                value: entry.key,
+                child: Text(entry.value, overflow: TextOverflow.ellipsis),
+              ),
           ],
           onChanged: onChanged,
         ),
@@ -1288,11 +1265,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           Text(label,
               style: TextStyle(
                   fontWeight: destaque ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: destaque ? (compacto ? 15 : 16) : (compacto ? 13 : 14))),
+                  fontSize: (destaque ? (compacto ? 15 : 16) : (compacto ? 13 : 14)) + Brand.textBump01cm)),
           Text(valor,
               style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: destaque ? (compacto ? 16 : 17) : (compacto ? 13 : 14),
+                  fontSize: (destaque ? (compacto ? 16 : 17) : (compacto ? 13 : 14)) + Brand.textBump01cm,
                   color: valorColor ?? (destaque ? Brand.green : const Color(0xFF263238)))),
         ],
       ),
@@ -1309,13 +1286,17 @@ class _TabContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 18),
-        const SizedBox(width: 6),
-        Text(text),
-      ],
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 5),
+          Text(text),
+        ],
+      ),
     );
   }
 }
@@ -1368,7 +1349,7 @@ class _ItemListaTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text('$indice',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 11)),
+                    style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue, fontSize: 11 + Brand.textBump01cm)),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1378,12 +1359,12 @@ class _ItemListaTile extends StatelessWidget {
                     Text(item.descricao,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, height: 1.2)),
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13 + Brand.textBump01cm, height: 1.2)),
                     const SizedBox(height: 3),
                     Text(
                       '${_fmtQtd(item.quantidade)} × ${brMoney(item.precoUnitario)}'
                       '${temDesconto ? '  •  desc. ${brMoney(item.desconto)}' : ''}',
-                      style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.45)),
+                      style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black.withValues(alpha: 0.45)),
                     ),
                   ],
                 ),
@@ -1393,11 +1374,11 @@ class _ItemListaTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(brMoney(item.total),
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Brand.green)),
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14 + Brand.textBump01cm, color: Brand.green)),
                   if (temDesconto)
                     Text(brMoney(item.bruto),
                         style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 10 + Brand.textBump01cm,
                             color: Colors.black.withValues(alpha: 0.35),
                             decoration: TextDecoration.lineThrough)),
                 ],
@@ -1581,7 +1562,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                       child: Text(widget.descricao,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15 + Brand.textBump01cm)),
                     ),
                     IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
                   ],
@@ -1599,7 +1580,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     children: [
                       const Text('Preço unitário (bloqueado)', style: TextStyle(color: Colors.black54)),
                       Text(brMoney(widget.precoUnitario),
-                          style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
+                          style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
                     ],
                   ),
                 ),
@@ -1680,7 +1661,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Total do item: ${brMoney(_bruto - _desconto)}',
-                        style: const TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
+                        style: TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1802,7 +1783,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                     children: [
                       Expanded(
                         child: Text(widget.titulo,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                            style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
                       ),
                       IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                     ],
@@ -1876,7 +1857,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
         onSelected: (_) => onTap(),
         selectedColor: Brand.blue,
         labelStyle: TextStyle(
-            color: sel ? Colors.white : Colors.black87, fontWeight: FontWeight.w600, fontSize: 12.5),
+            color: sel ? Colors.white : Colors.black87, fontWeight: FontWeight.w600, fontSize: 12.5 + Brand.textBump01cm),
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE2E8F0))),

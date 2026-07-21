@@ -259,7 +259,7 @@ class ApiClient {
     final digits = cnpjDigits.replaceAll(RegExp(r'\D'), '');
     final r = await _http
         .get(_uri('cnpj/$digits'), headers: _headers(auth: true))
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(seconds: 12));
     final data = _decode(r);
     return (data['data'] as Map<String, dynamic>? ?? {});
   }

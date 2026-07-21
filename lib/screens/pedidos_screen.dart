@@ -175,33 +175,49 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final vazio = ehOrcamento
         ? 'Nenhum orçamento neste aparelho nem nos últimos 30 dias do ERP.\nToque em sincronizar após reinstalar o app.'
         : 'Nenhum pedido neste aparelho nem venda no histórico.';
-    return Scaffold(
-      backgroundColor: Brand.bg,
-      appBar: AppBar(
-        title: Text(titulo),
-        backgroundColor: Brand.blue,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Sincronizar',
-            icon: const Icon(Icons.sync),
-            onPressed: _sincronizar,
-          ),
-        ],
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        textTheme: theme.textTheme.apply(fontSizeDelta: Brand.textBump01cm),
+        primaryTextTheme: theme.primaryTextTheme.apply(fontSizeDelta: Brand.textBump01cm),
       ),
-      body: _carregando
-          ? const Center(child: CircularProgressIndicator())
-          : _rows.isEmpty
-              ? Center(child: Text(vazio))
-              : RefreshIndicator(
-                  onRefresh: _sincronizar,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _PedidoCard(p: _rows[i], ehOrcamento: ehOrcamento),
+      child: Scaffold(
+        backgroundColor: Brand.bg,
+        appBar: AppBar(
+          title: Text(titulo, style: TextStyle(fontSize: 20 + Brand.textBump01cm, fontWeight: FontWeight.w600)),
+          backgroundColor: Brand.blue,
+          foregroundColor: Colors.white,
+          actions: [
+            IconButton(
+              tooltip: 'Sincronizar',
+              icon: const Icon(Icons.sync),
+              onPressed: _sincronizar,
+            ),
+          ],
+        ),
+        body: _carregando
+            ? const Center(child: CircularProgressIndicator())
+            : _rows.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        vazio,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14 + Brand.textBump01cm, color: Colors.black54),
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _sincronizar,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _rows.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) => _PedidoCard(p: _rows[i], ehOrcamento: ehOrcamento),
+                    ),
                   ),
-                ),
+      ),
     );
   }
 }
@@ -266,8 +282,10 @@ class _PedidoCard extends StatelessWidget {
           children: [
             ListTile(
               leading: const Icon(Icons.picture_as_pdf_outlined, color: Brand.blue),
-              title: const Text('Compartilhar PDF'),
-              subtitle: const Text('WhatsApp, e-mail, etc.'),
+              title: Text('Compartilhar PDF',
+                  style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
+              subtitle: Text('WhatsApp, e-mail, etc.',
+                  style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
               onTap: () {
                 Navigator.pop(ctx);
                 PedidoDocumentActions.compartilhar(context, uuid);
@@ -275,7 +293,8 @@ class _PedidoCard extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.print_outlined, color: Brand.blue),
-              title: const Text('Imprimir'),
+              title: Text('Imprimir',
+                  style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
               onTap: () {
                 Navigator.pop(ctx);
                 PedidoDocumentActions.imprimir(context, uuid);
@@ -312,13 +331,14 @@ class _PedidoCard extends StatelessWidget {
                   (p['nome_razao'] ?? 'Cliente').toString(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14 + Brand.textBump01cm),
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: cor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                child: Text(label, style: TextStyle(color: cor, fontWeight: FontWeight.w700, fontSize: 12)),
+                child: Text(label,
+                    style: TextStyle(color: cor, fontWeight: FontWeight.w700, fontSize: 12 + Brand.textBump01cm)),
               ),
               if (temPdf) ...[
                 const SizedBox(width: 4),
@@ -340,16 +360,17 @@ class _PedidoCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   _linhaNumeros(),
-                  style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  style: TextStyle(color: Colors.black54, fontSize: 13 + Brand.textBump01cm),
                 ),
               ),
               Text(brMoney(p['total'] as num?),
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Brand.blue)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, color: Brand.blue, fontSize: 14 + Brand.textBump01cm)),
             ],
           ),
           if (erro.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(erro, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            Text(erro, style: TextStyle(color: Colors.red, fontSize: 12 + Brand.textBump01cm)),
           ],
         ],
       ),
