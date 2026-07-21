@@ -3,8 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../api/api_client.dart';
 import '../log/app_log.dart';
-import 'api_client.dart';
 
 /// Consulta CNPJ com fallback direto nas APIs públicas.
 ///
