@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../ui/barcode_scan.dart';
 import '../ui/brand.dart';
 import '../ui/estoque_chips.dart';
 import '../ui/format.dart';
@@ -70,6 +71,7 @@ class ProdutosScreen extends StatefulWidget {
 
 class _ProdutosScreenState extends State<ProdutosScreen> {
   final _db = LocalDb.instance;
+  final _buscaCtrl = TextEditingController();
   List<Map<String, dynamic>> _rows = [];
   String _termo = '';
   bool _carregando = true;
@@ -78,6 +80,20 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   void initState() {
     super.initState();
     _buscar();
+  }
+
+  @override
+  void dispose() {
+    _buscaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _escanearBarras() async {
+    final codigo = await escanearCodigoBarras(context);
+    if (!mounted || codigo == null || codigo.isEmpty) return;
+    _buscaCtrl.text = codigo;
+    _termo = codigo;
+    await _buscar();
   }
 
   Future<void> _buscar() async {
@@ -97,11 +113,43 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final base = context.read<AppState>().config.baseUrl;
+    final config = context.read<AppState>().config;
+    final base = config.baseUrl;
+    final estoque = config.estoqueNome.trim();
+    final estoqueLabel = estoque.isEmpty ? 'Estoque não definido' : estoque;
+
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(
-        title: const Text('Produtos'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Produtos'),
+            const SizedBox(height: 1),
+            Row(
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  size: 12,
+                  color: estoque.isEmpty ? Colors.white54 : Colors.white70,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    estoqueLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: estoque.isEmpty ? Colors.white54 : Colors.white70,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -116,9 +164,15 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
             ),
             child: TextField(
+              controller: _buscaCtrl,
               decoration: InputDecoration(
                 hintText: 'Buscar por descrição, código ou marca',
                 prefixIcon: const Icon(Icons.search, color: Brand.blue),
+                suffixIcon: IconButton(
+                  tooltip: 'Escanear código de barras',
+                  onPressed: _escanearBarras,
+                  icon: const Icon(Icons.qr_code_scanner, color: Brand.blue),
+                ),
                 filled: true,
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),

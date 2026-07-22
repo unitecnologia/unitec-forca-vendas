@@ -8,10 +8,18 @@ import '../config.dart';
 import '../log/app_log.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.statusCode});
+  ApiException(this.message, {this.statusCode, this.code});
 
   final String message;
   final int? statusCode;
+  final String? code;
+
+  bool get isDeviceBlocked =>
+      code == 'device_not_approved' ||
+      code == 'device_revoked' ||
+      code == 'device_required' ||
+      message.toLowerCase().contains('aguardando autorização') ||
+      message.toLowerCase().contains('não identificado');
 
   @override
   String toString() => message;
@@ -270,11 +278,15 @@ class ApiClient {
       return jsonDecode(r.body) as Map<String, dynamic>;
     }
     String msg = 'Erro ${r.statusCode}';
+    String? code;
     try {
       final body = jsonDecode(r.body);
-      if (body is Map && body['message'] != null) msg = body['message'].toString();
+      if (body is Map) {
+        if (body['message'] != null) msg = body['message'].toString();
+        if (body['code'] != null) code = body['code'].toString();
+      }
     } catch (_) {}
     AppLog.instance.error('api', '${r.request?.url.path ?? ''} → HTTP ${r.statusCode}: $msg');
-    throw ApiException(msg, statusCode: r.statusCode);
+    throw ApiException(msg, statusCode: r.statusCode, code: code);
   }
 }

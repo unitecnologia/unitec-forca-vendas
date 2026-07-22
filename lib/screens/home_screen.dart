@@ -17,6 +17,7 @@ import 'pedidos_screen.dart';
 import 'produtos_screen.dart';
 import 'titulos_screen.dart';
 import 'relatorios_screen.dart';
+import 'rotas_screen.dart';
 import 'visitas_sem_venda_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -61,18 +62,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await _atualizarContadores();
   }
 
-  void _emDesenvolvimento(String nome) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('$nome — em desenvolvimento'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
@@ -83,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _MenuItem('Orçamentos', Icons.request_quote_rounded, const Color(0xFF6366F1),
           onTap: () => _abrir(const PedidosScreen(tipoFiltro: 'orcamento'))),
       _MenuItem('Rotas', Icons.alt_route_rounded, const Color(0xFF0891B2),
-          onTap: () => _emDesenvolvimento('Rotas'), emDesenvolvimento: true),
+          onTap: () => _abrir(const RotasScreen())),
       _MenuItem('Pedidos', Icons.fact_check_rounded, Brand.blue,
           onTap: () => _abrir(const PedidosScreen()), badge: _pendentes > 0 ? '$_pendentes' : null),
       _MenuItem('Clientes', Icons.people_alt_rounded, const Color(0xFF0D9488),
@@ -190,17 +179,47 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends StatefulWidget {
   const _Header({required this.state});
 
   final AppState state;
 
   @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  String? _vendedorLocal;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolverVendedorLocal();
+  }
+
+  Future<void> _resolverVendedorLocal() async {
+    final id = widget.state.config.vendedorId;
+    if (id == null || widget.state.config.vendedorNome.trim().isNotEmpty) return;
+    final rows = await LocalDb.instance.query(
+      'SELECT nome FROM vendedores WHERE id = ? LIMIT 1',
+      [id],
+    );
+    if (!mounted || rows.isEmpty) return;
+    setState(() => _vendedorLocal = (rows.first['nome'] ?? '').toString());
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final state = widget.state;
     final empresa = state.config.empresaNome.isEmpty
         ? 'UNITECNOLOGIA SISTEMAS'
         : state.config.empresaNome.toUpperCase();
     final usuario = state.config.userName.isEmpty ? 'Representante' : state.config.userName;
+    final vendedor = state.config.vendedorNome.trim().isNotEmpty
+        ? state.config.vendedorNome.trim()
+        : (_vendedorLocal ?? '').trim();
+    final caixa = state.config.caixaNome.trim();
+    final estoque = state.config.estoqueNome.trim();
 
     return Container(
       decoration: const BoxDecoration(
@@ -210,22 +229,23 @@ class _Header extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 16),
+          padding: const EdgeInsets.fromLTRB(16, 10, 4, 12),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   color: Colors.white,
                 ),
                 alignment: Alignment.center,
                 child: const Text('U',
                     style: TextStyle(
-                        color: Brand.blue, fontSize: 26, fontWeight: FontWeight.w800)),
+                        color: Brand.blue, fontSize: 24, fontWeight: FontWeight.w800)),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,29 +254,44 @@ class _Header extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
+                            color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 3),
                     Row(
                       children: [
-                        const Icon(Icons.person_outline, color: Colors.white70, size: 15),
+                        const Icon(Icons.person_outline, color: Colors.white70, size: 14),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(usuario,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 13)),
+                              style: const TextStyle(color: Colors.white, fontSize: 12.5)),
                         ),
                         Text(kAppVersionLabel,
-                            style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                        const SizedBox(width: 4),
+                            style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
                       ],
                     ),
+                    if (vendedor.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      _metaLinha(Icons.badge_outlined, 'Vendedor', vendedor),
+                    ],
+                    if (caixa.isNotEmpty || estoque.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (caixa.isNotEmpty)
+                            Expanded(child: _metaLinha(Icons.point_of_sale_outlined, 'Caixa', caixa)),
+                          if (caixa.isNotEmpty && estoque.isNotEmpty) const SizedBox(width: 8),
+                          if (estoque.isNotEmpty)
+                            Expanded(child: _metaLinha(Icons.inventory_2_outlined, 'Estoque', estoque)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
               IconButton(
                 tooltip: 'Log',
-                icon: const Icon(Icons.article_outlined, color: Colors.white),
+                icon: const Icon(Icons.article_outlined, color: Colors.white, size: 22),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const LogScreen()),
                 ),
@@ -265,6 +300,23 @@ class _Header extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _metaLinha(IconData icon, String label, String valor) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white70, size: 13),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            '$label: $valor',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 11.5, height: 1.2),
+          ),
+        ),
+      ],
     );
   }
 }

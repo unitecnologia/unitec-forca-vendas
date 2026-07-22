@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../app_info.dart';
 import '../app_state.dart';
+import '../auth/credential_store.dart';
 import '../ui/brand.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,6 +22,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = true;
   bool _carregandoUsuarios = false;
   bool _entrando = false;
+  bool _salvarUsuario = false;
+  bool _usarDigital = false;
+  bool _biometriaDisponivel = false;
+  bool _temSenhaSalva = false;
   String? _erro;
 
   static String _empresaLabel(dynamic e) {
@@ -52,7 +57,29 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarEmpresas();
+    _preparar();
+  }
+
+  Future<void> _preparar() async {
+    final config = context.read<AppState>().config;
+    _salvarUsuario = config.rememberUser;
+    _usarDigital = config.biometricEnabled;
+    _biometriaDisponivel = await CredentialStore.canUseBiometrics();
+    _temSenhaSalva = (await CredentialStore.readSenha())?.isNotEmpty == true;
+    if (!mounted) return;
+    await _carregarEmpresas();
+    if (mounted &&
+        _salvarUsuario &&
+        _usarDigital &&
+        _biometriaDisponivel &&
+        _temSenhaSalva &&
+        _empresaId != null &&
+        _userId != null) {
+      // Oferece a digital assim que a tela estiver pronta.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _entrarComDigital();
+      });
+    }
   }
 
   @override
@@ -75,8 +102,16 @@ class _LoginScreenState extends State<LoginScreen> {
       _loading = true;
       _erro = null;
     });
+    final state = context.read<AppState>();
     try {
-      final info = await context.read<AppState>().info();
+      // Confere no servidor se o aparelho ainda está autorizado.
+      await state.refreshApproval();
+      if (!mounted) return;
+      if (!state.isApproved) {
+        setState(() => _loading = false);
+        return;
+      }
+      final info = await state.info();
       final empresas = _ordenarEmpresas(info['empresas'] as List<dynamic>? ?? []);
       setState(() {
         _empresas = empresas;
@@ -87,8 +122,12 @@ class _LoginScreenState extends State<LoginScreen> {
         await _carregarUsuarios();
       }
     } catch (e) {
+      final voltouEspera = await state.syncDeviceApprovalFromError(e);
+      if (!mounted) return;
       setState(() {
-        _erro = 'Não foi possível carregar empresas: $e';
+        _erro = voltouEspera
+            ? null
+            : 'Não foi possível carregar empresas: $e';
         _loading = false;
       });
     }
@@ -102,12 +141,11 @@ class _LoginScreenState extends State<LoginScreen> {
       _usuarios = [];
       _userId = null;
     });
+    final state = context.read<AppState>();
     try {
-      final users = _ordenarUsuarios(
-        await context.read<AppState>().usuariosDaEmpresa(_empresaId!),
-      );
-      final config = context.read<AppState>().config;
-      final lastUser = config.userId;
+      final users = _ordenarUsuarios(await state.usuariosDaEmpresa(_empresaId!));
+      if (!mounted) return;
+      final lastUser = state.config.userId;
       setState(() {
         _usuarios = users;
         _userId = lastUser != null && users.any((u) => u['id'] == lastUser)
@@ -116,8 +154,10 @@ class _LoginScreenState extends State<LoginScreen> {
         _carregandoUsuarios = false;
       });
     } catch (e) {
+      final voltouEspera = await state.syncDeviceApprovalFromError(e);
+      if (!mounted) return;
       setState(() {
-        _erro = 'Não foi possível carregar usuários: $e';
+        _erro = voltouEspera ? null : 'Não foi possível carregar usuários: $e';
         _carregandoUsuarios = false;
       });
     }
@@ -130,25 +170,58 @@ class _LoginScreenState extends State<LoginScreen> {
     return '';
   }
 
-  Future<void> _entrar() async {
+  Future<void> _entrar({String? senhaOverride}) async {
     if (_empresaId == null || _userId == null) return;
+    final senha = senhaOverride ?? _senha.text;
+    if (senha.isEmpty) {
+      setState(() => _erro = 'Informe a senha do app.');
+      return;
+    }
     setState(() {
       _entrando = true;
       _erro = null;
     });
+    final state = context.read<AppState>();
     try {
-      await context.read<AppState>().login(
-            _empresaId!,
-            _userId!,
-            _senha.text,
-            empresaNome: _empresaNome(),
-          );
+      await state.login(
+        _empresaId!,
+        _userId!,
+        senha,
+        empresaNome: _empresaNome(),
+        rememberUser: _salvarUsuario,
+        biometricEnabled: _salvarUsuario && _usarDigital,
+      );
     } catch (e) {
+      await state.syncDeviceApprovalFromError(e);
+      if (!mounted) return;
       setState(() {
         _erro = '$e';
         _entrando = false;
       });
     }
+  }
+
+  Future<void> _entrarComDigital() async {
+    if (_entrando || _empresaId == null || _userId == null) return;
+    final ok = await CredentialStore.authenticate(
+      reason: 'Entre no Força de Vendas com a digital',
+    );
+    if (!ok) {
+      if (mounted) setState(() => _erro = 'Digital não reconhecida. Digite a senha.');
+      return;
+    }
+    final senha = await CredentialStore.readSenha();
+    if (senha == null || senha.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _erro = 'Senha não encontrada. Entre com a senha e ative a digital de novo.';
+          _usarDigital = false;
+          _temSenhaSalva = false;
+        });
+      }
+      return;
+    }
+    await _entrar(senhaOverride: senha);
   }
 
   InputDecoration _fieldDecoration(String label, {Widget? suffixIcon}) {
@@ -319,10 +392,52 @@ class _LoginScreenState extends State<LoginScreen> {
                                   TextField(
                                     controller: _senha,
                                     obscureText: true,
-                                    decoration: _fieldDecoration('Senha do app'),
+                                    decoration: _fieldDecoration(
+                                      'Senha do app',
+                                      suffixIcon: (_usarDigital && _temSenhaSalva && _biometriaDisponivel)
+                                          ? IconButton(
+                                              tooltip: 'Entrar com digital',
+                                              icon: const Icon(Icons.fingerprint, color: Brand.blue),
+                                              onPressed: _entrando ? null : _entrarComDigital,
+                                            )
+                                          : null,
+                                    ),
                                     onSubmitted: (_) => _entrar(),
                                   ),
-                                  const SizedBox(height: 22),
+                                  const SizedBox(height: 8),
+                                  CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    controlAffinity: ListTileControlAffinity.leading,
+                                    value: _salvarUsuario,
+                                    title: const Text('Salvar usuário', style: TextStyle(fontSize: 14)),
+                                    subtitle: const Text(
+                                      'Mantém empresa e usuário ao sair',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    onChanged: (v) {
+                                      setState(() {
+                                        _salvarUsuario = v ?? false;
+                                        if (!_salvarUsuario) _usarDigital = false;
+                                      });
+                                    },
+                                  ),
+                                  if (_biometriaDisponivel)
+                                    CheckboxListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      dense: true,
+                                      controlAffinity: ListTileControlAffinity.leading,
+                                      value: _usarDigital && _salvarUsuario,
+                                      title: const Text('Usar digital do aparelho', style: TextStyle(fontSize: 14)),
+                                      subtitle: const Text(
+                                        'Próximo acesso com biometria',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                      onChanged: !_salvarUsuario
+                                          ? null
+                                          : (v) => setState(() => _usarDigital = v ?? false),
+                                    ),
+                                  const SizedBox(height: 12),
                                   DecoratedBox(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(14),
@@ -357,6 +472,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                             ),
                                     ),
                                   ),
+                                  if (_salvarUsuario &&
+                                      _usarDigital &&
+                                      _temSenhaSalva &&
+                                      _biometriaDisponivel) ...[
+                                    const SizedBox(height: 12),
+                                    OutlinedButton.icon(
+                                      onPressed: _entrando ? null : _entrarComDigital,
+                                      icon: const Icon(Icons.fingerprint),
+                                      label: const Text('Entrar com digital'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Brand.blue,
+                                        minimumSize: const Size.fromHeight(46),
+                                        side: BorderSide(color: Brand.blue.withValues(alpha: 0.45)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      ),
+                                    ),
+                                  ],
                                   if (_erro != null) ...[
                                     const SizedBox(height: 16),
                                     Container(

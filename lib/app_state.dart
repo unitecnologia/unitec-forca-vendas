@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api/api_client.dart';
+import 'auth/credential_store.dart';
 import 'config.dart';
 import 'log/app_log.dart';
 import 'sync/sync_service.dart';
@@ -145,6 +146,22 @@ class AppState extends ChangeNotifier {
     return status;
   }
 
+  /// Se a API indicar aparelho pendente/revogado, alinha o flag local
+  /// (volta à tela de autorização).
+  Future<bool> syncDeviceApprovalFromError(Object e) async {
+    final blocked = e is ApiException
+        ? e.isDeviceBlocked
+        : e.toString().toLowerCase().contains('aguardando autorização');
+    if (!blocked) return false;
+    if (config.deviceApproved) {
+      config.deviceApproved = false;
+      await config.save();
+      AppLog.instance.warn('aparelho', 'Autorização local invalidada: $e');
+      notifyListeners();
+    }
+    return true;
+  }
+
   Future<Map<String, dynamic>> info() async {
     return api.info();
   }
@@ -153,7 +170,14 @@ class AppState extends ChangeNotifier {
     return api.usuarios(empresaId);
   }
 
-  Future<void> login(int empresaId, int userId, String senha, {String? empresaNome}) async {
+  Future<void> login(
+    int empresaId,
+    int userId,
+    String senha, {
+    String? empresaNome,
+    bool rememberUser = false,
+    bool biometricEnabled = false,
+  }) async {
     final resp = await api.login(
       empresaId: empresaId,
       userId: userId,
@@ -169,6 +193,16 @@ class AppState extends ChangeNotifier {
       config.userId = user['id'];
       config.userName = (user['name'] ?? '').toString();
       config.vendedorId = user['vendedor_id'];
+      config.vendedorNome = (user['vendedor_nome'] ?? '').toString();
+      config.caixaNome = (user['caixa_nome'] ?? '').toString();
+      config.estoqueNome = (user['estoque_nome'] ?? '').toString();
+    }
+    config.rememberUser = rememberUser;
+    config.biometricEnabled = rememberUser && biometricEnabled;
+    if (config.biometricEnabled) {
+      await CredentialStore.saveSenha(senha);
+    } else {
+      await CredentialStore.clearSenha();
     }
     await config.save();
     AppLog.instance.ok('login', 'Entrou como ${config.userName} (empresa ${config.empresaNome})');
@@ -179,6 +213,10 @@ class AppState extends ChangeNotifier {
   Future<void> logout() async {
     sync.stop();
     await api.logout();
+    if (!config.rememberUser) {
+      await CredentialStore.clearSenha();
+      config.biometricEnabled = false;
+    }
     config.clearSession();
     await config.save();
     AppLog.instance.info('login', 'Sessão encerrada');
@@ -189,10 +227,13 @@ class AppState extends ChangeNotifier {
   /// para que, ao reconectar, o ERP reconheça o mesmo aparelho.
   Future<void> disconnect() async {
     sync.stop();
+    await CredentialStore.clearSenha();
     config
       ..baseUrl = ''
       ..deviceApproved = false
       ..pairingCode = ''
+      ..rememberUser = false
+      ..biometricEnabled = false
       ..empresaId = null
       ..empresaNome = ''
       ..clearSession();

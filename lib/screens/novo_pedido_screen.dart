@@ -8,7 +8,9 @@ import 'package:uuid/uuid.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../fv_carteira.dart';
+import '../sync/sync_service.dart';
 import '../ui/brand.dart';
+import '../ui/barcode_scan.dart';
 import '../ui/cliente_credito_check.dart';
 import '../ui/format.dart';
 import '../ui/pdv_alert_dialog.dart';
@@ -106,9 +108,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Map<String, dynamic>? _listaPreco;
   List<Map<String, dynamic>> _listasPreco = [];
+  List<Map<String, dynamic>> _transportadoras = [];
+  int? _transportadoraId;
   bool _salvando = false;
   bool _sincDesconto = false;
   bool _creditoLiberado = false;
+  SyncService? _sync;
 
   @override
   void initState() {
@@ -120,15 +125,55 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     });
     _cliente = widget.clienteInicial;
     _init();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _sync = context.read<AppState>().sync;
+      _sync!.addListener(_onSyncChanged);
+    });
+  }
+
+  void _onSyncChanged() {
+    if (_sync?.status != SyncStatus.ok) return;
+    _carregarTransportadoras();
   }
 
   Future<void> _init() async {
     await _carregarListasPreco();
     await _carregarFormas();
+    await _carregarTransportadoras();
+  }
+
+  Future<void> _carregarTransportadoras() async {
+    try {
+      await _db.ensureTransportadorasTable();
+      final rows = await _db.query(
+        'SELECT * FROM transportadoras WHERE COALESCE(ativo, 1) = 1 '
+        'ORDER BY CAST(codigo AS INTEGER), nome',
+      );
+      if (!mounted) return;
+      setState(() {
+        _transportadoras = rows;
+        if (_transportadoraId != null &&
+            !_transportadoras.any((t) => _asInt(t['id']) == _transportadoraId)) {
+          _transportadoraId = null;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _transportadoras = []);
+    }
+  }
+
+  int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
   }
 
   @override
   void dispose() {
+    _sync?.removeListener(_onSyncChanged);
     _tabController.dispose();
     _obs.dispose();
     _condicao.dispose();
@@ -167,6 +212,27 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       if (t['id'] == id) return t;
     }
     return null;
+  }
+
+  Map<String, dynamic>? _transportadoraById(int? id) {
+    for (final t in _transportadoras) {
+      if (_asInt(t['id']) == id) return t;
+    }
+    return null;
+  }
+
+  String _transportadoraItemLabel(Map<String, dynamic> t) {
+    final codigo = (t['codigo'] ?? '').toString().trim();
+    final nome = (t['nome'] ?? t['apelido'] ?? t['proprietario'] ?? '').toString().trim();
+    if (codigo.isEmpty) return nome.isEmpty ? 'Transportadora' : nome;
+    if (nome.isEmpty) return codigo;
+    return '$codigo - $nome';
+  }
+
+  String? _transportadoraLabel(int? id) {
+    final t = _transportadoraById(id);
+    if (t == null) return null;
+    return _transportadoraItemLabel(t);
   }
 
   List<Map<String, dynamic>> _parseTabelas(dynamic json) {
@@ -470,6 +536,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'price_table_id': _listaPreco?['id'],
       'lista_preco_nome': _listaPreco?['descricao'],
       'frete': _freteValor,
+      'transportadora_id': _transportadoraId,
+      'transportadora_nome': _transportadoraLabel(_transportadoraId),
       if (_creditoLiberado) 'credito_liberado': true,
       if (pixExtra != null) ...pixExtra,
     };
@@ -512,40 +580,35 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       appBar: AppBar(
         title: Text(
           _tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido',
-          style: TextStyle(fontSize: 20 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+          style: TextStyle(fontSize: 17 + Brand.textBump01cm, fontWeight: FontWeight.w600, letterSpacing: 0.2),
         ),
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
+        toolbarHeight: 48,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(78),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                child: _progressSteps(),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TabBar(
-                  controller: _tabController,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  indicatorWeight: 3.5,
-                  indicatorColor: Colors.white,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white70,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 10),
-                  labelStyle: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w800),
-                  unselectedLabelStyle: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w600),
-                  tabs: const [
-                    Tab(height: 36, text: 'Dados'),
-                    Tab(height: 36, text: 'Itens'),
-                    Tab(height: 36, text: 'Resumo'),
-                  ],
-                ),
-              ),
-            ],
+          preferredSize: const Size.fromHeight(40),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+            child: TabBar(
+              controller: _tabController,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              indicatorWeight: 2.5,
+              indicatorColor: Colors.white,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white60,
+              labelPadding: EdgeInsets.zero,
+              labelStyle: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700, letterSpacing: 0.3),
+              unselectedLabelStyle: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w500),
+              tabs: [
+                Tab(height: 36, child: _tabLabel(1, 'Dados')),
+                Tab(height: 36, child: _tabLabel(2, 'Itens')),
+                Tab(height: 36, child: _tabLabel(3, 'Resumo')),
+              ],
+            ),
           ),
         ),
       ),
@@ -562,60 +625,33 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _progressSteps() {
-    final step = _tabController.index;
-    final labels = ['Dados', 'Itens', 'Resumo'];
+  Widget _tabLabel(int n, String label) {
+    final i = n - 1;
+    final active = _tabController.index == i;
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < labels.length; i++) ...[
-          if (i > 0)
-            Expanded(
-              child: Container(
-                height: 2,
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                color: i <= step ? Colors.white : Colors.white24,
-              ),
-            ),
-          _progressDot(i, step, labels[i]),
-        ],
-      ],
-    );
-  }
-
-  Widget _progressDot(int i, int step, String label) {
-    final done = i < step;
-    final current = i == step;
-    return GestureDetector(
-      onTap: () => _tabController.animateTo(i),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 22,
-            height: 22,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: done || current ? Colors.white : Colors.white24,
-              shape: BoxShape.circle,
-            ),
-            child: done
-                ? const Icon(Icons.check, size: 14, color: Brand.blue)
-                : Text('${i + 1}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: current ? Brand.blue : Colors.white70,
-                    )),
+        Container(
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.white24,
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(height: 2),
-          Text(label,
-              style: TextStyle(
-                fontSize: 10 + Brand.textBump01cm,
-                fontWeight: current ? FontWeight.w800 : FontWeight.w500,
-                color: current || done ? Colors.white : Colors.white60,
-              )),
-        ],
-      ),
+          child: Text(
+            '$n',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: active ? Brand.blue : Colors.white70,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label),
+      ],
     );
   }
 
@@ -625,10 +661,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final empresa = context.read<AppState>().config.empresaNome;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
       children: [
         _filialCard(empresa.isEmpty ? 'Empresa padrão' : empresa),
-        const SizedBox(height: 4),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
           _pedidoNumeroCard(),
           _field('Tipo de Pedido *', _dropdown<String>(
@@ -692,7 +727,20 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             )),
           _vencimentosPreview(),
         ]),
-        _section(icon: Icons.attach_money, titulo: 'Valores', filhos: [
+        _section(icon: Icons.local_shipping_outlined, titulo: 'Transportadora', filhos: [
+          _field(
+            'Transportadora',
+            _dropdown<int?>(
+              value: _transportadoraId,
+              items: {
+                for (final t in _transportadoras)
+                  if (_asInt(t['id']) case final int id)
+                    id: _transportadoraItemLabel(t),
+              },
+              hint: _transportadoras.isEmpty ? 'Sincronize para carregar' : 'Selecione',
+              onChanged: (id) => setState(() => _transportadoraId = id),
+            ),
+          ),
           _field('Valor do Frete', _campoTexto(_frete,
               teclado: const TextInputType.numberWithOptions(decimal: true),
               prefix: 'R\$ ',
@@ -828,42 +876,46 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final pctTotal = _brutoItens > 0 ? (descTotal / _brutoItens * 100) : 0.0;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
       children: [
-        _tituloSecao('Dados dos itens'),
-        _resumoRow('Preço de tabela dos produtos', brMoney(_brutoItens)),
-        _resumoRow('Desconto nos itens', '${brMoney(_descontoItens)} (${pctItens.toStringAsFixed(2)}%)'),
-        _resumoRow('R\$ produtos com desconto', brMoney(_subtotalItens)),
-        const SizedBox(height: 16),
-        _tituloSecao('Desconto a nível de pedido'),
-        Row(
-          children: [
-            Expanded(
-              child: _campoTexto(_descPct,
-                  label: 'Desconto (%)',
-                  teclado: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => _recalcDescontoDePct()),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _campoTexto(_descValor,
-                  label: 'Desconto (R\$)',
-                  teclado: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => _recalcDescontoDeValor()),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        _resumoRow('Descontos totais', '${brMoney(descTotal)} (${pctTotal.toStringAsFixed(2)}%)'),
-        const SizedBox(height: 16),
-        _tituloSecao('Totais do Pedido'),
-        _resumoRow('Valor dos produtos', brMoney(_subtotalItens)),
-        _resumoRow('Frete', brMoney(_freteValor)),
-        const Divider(),
-        _resumoRow('Valor total do pedido', brMoney(_total), destaque: true),
-        const SizedBox(height: 16),
-        _tituloSecao('Parcelas'),
-        _parcelasResumo(),
+        _section(icon: Icons.inventory_2_outlined, titulo: 'Dados dos itens', filhos: [
+          _resumoRow('Preço de tabela', brMoney(_brutoItens), compacto: true),
+          _resumoRow('Desconto nos itens', '${brMoney(_descontoItens)} (${pctItens.toStringAsFixed(2)}%)', compacto: true),
+          _resumoRow('Produtos c/ desconto', brMoney(_subtotalItens), compacto: true),
+        ]),
+        _section(icon: Icons.percent_outlined, titulo: 'Desconto do pedido', filhos: [
+          Row(
+            children: [
+              Expanded(
+                child: _campoTexto(_descPct,
+                    label: 'Desconto (%)',
+                    teclado: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => _recalcDescontoDePct()),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _campoTexto(_descValor,
+                    label: 'Desconto (R\$)',
+                    teclado: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => _recalcDescontoDeValor()),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          _resumoRow('Descontos totais', '${brMoney(descTotal)} (${pctTotal.toStringAsFixed(2)}%)', compacto: true),
+        ]),
+        _section(icon: Icons.receipt_long_outlined, titulo: 'Totais do pedido', filhos: [
+          _resumoRow('Valor dos produtos', brMoney(_subtotalItens), compacto: true),
+          _resumoRow('Frete', brMoney(_freteValor), compacto: true),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ),
+          _resumoRow('Valor total', brMoney(_total), destaque: true, compacto: true),
+        ]),
+        _section(icon: Icons.calendar_month_outlined, titulo: 'Parcelas', filhos: [
+          _parcelasResumo(),
+        ]),
       ],
     );
   }
@@ -905,7 +957,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           : parcelaBase;
       final venc = hoje.add(Duration(days: base[i]));
       linhas.add(Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -916,43 +968,41 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 children: [
                   Text('${i + 1}ª — ${_fmtData(venc)}',
                       style: TextStyle(
-                          fontSize: 13 + Brand.textBump01cm,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF37474F))),
+                          fontSize: 12 + Brand.textBump01cm,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                          height: 1.2)),
                   Text(forma,
-                      style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black54)),
+                      style: TextStyle(
+                          fontSize: 10 + Brand.textBump01cm,
+                          color: Color(0xFF94A3B8),
+                          height: 1.2)),
                 ],
               ),
             ),
             Text(brMoney(valor),
                 style: TextStyle(
-                    fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Brand.green)),
+                    fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700, color: Brand.green)),
           ],
         ),
       ));
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FB),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text('$n parcela${n > 1 ? 's' : ''}',
-                style: TextStyle(
-                    fontSize: 11 + Brand.textBump01cm, fontWeight: FontWeight.w700, color: Brand.blue)),
-          ),
-          ...linhas,
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text('$n parcela${n > 1 ? 's' : ''}',
+              style: TextStyle(
+                  fontSize: 10 + Brand.textBump01cm,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: Color(0xFF64748B))),
+        ),
+        ...linhas,
+      ],
     );
   }
 
@@ -978,21 +1028,29 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 ],
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: _salvando ? null : () => Navigator.pop(context),
-              icon: const Icon(Icons.close),
-              label: const Text('Cancelar'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: _salvando ? null : _salvar,
-              icon: _salvando
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Icon(_tipo == 'pedido' && _isFormaPix() ? Icons.qr_code_2 : Icons.save_outlined),
-              label: Text(_salvando
-                  ? 'Salvando...'
-                  : (_tipo == 'pedido' && _isFormaPix() ? 'Gerar Pix' : 'Salvar')),
-              style: FilledButton.styleFrom(backgroundColor: Brand.green),
+            Transform.translate(
+              offset: const Offset(0, -Brand.textBump01cm), // sobe ~0,10 cm
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _salvando ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Cancelar'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _salvando ? null : _salvar,
+                    icon: _salvando
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Icon(_tipo == 'pedido' && _isFormaPix() ? Icons.qr_code_2 : Icons.save_outlined),
+                    label: Text(_salvando
+                        ? 'Salvando...'
+                        : (_tipo == 'pedido' && _isFormaPix() ? 'Gerar Pix' : 'Salvar')),
+                    style: FilledButton.styleFrom(backgroundColor: Brand.green),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -1069,47 +1127,32 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   // ---- Componentes do redesign (cards / campos / info tiles) -------------
   Widget _filialCard(String nome) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Brand.blue, Color.lerp(Brand.blue, const Color(0xFF0D47A1), 0.35)!],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Color(0x331565C0), blurRadius: 12, offset: Offset(0, 4))],
+        color: Brand.blue,
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 26),
-          ),
-          const SizedBox(width: 14),
+          const Icon(Icons.storefront_outlined, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Text('Filial',
+              style: TextStyle(
+                  fontSize: 11 + Brand.textBump01cm,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white70)),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('FILIAL',
-                    style: TextStyle(
-                        fontSize: 11 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
-                        color: Colors.white70)),
-                const SizedBox(height: 2),
-                Text(nome,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 17 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        height: 1.15)),
-              ],
-            ),
+            child: Text(nome,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    fontSize: 13 + Brand.textBump01cm,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1.1)),
           ),
         ],
       ),
@@ -1119,41 +1162,33 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _pedidoNumeroCard() {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F0FB),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.tag_rounded, size: 22, color: Brand.blue),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Pedido',
-                    style: TextStyle(
-                        fontSize: 12 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF64748B))),
-                const SizedBox(height: 2),
-                Text('Será gerado automaticamente ao sincronizar',
-                    style: TextStyle(
-                        fontSize: 14 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF475569),
-                        height: 1.2)),
-              ],
-            ),
+          Icon(Icons.tag_outlined, size: 16, color: Brand.blue.withValues(alpha: 0.85)),
+          const SizedBox(width: 8),
+          Text('Nº do pedido',
+              style: TextStyle(
+                  fontSize: 12 + Brand.textBump01cm,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B))),
+          const Spacer(),
+          Flexible(
+            child: Text('Gerado na sincronização',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    fontSize: 12 + Brand.textBump01cm,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF94A3B8),
+                    fontStyle: FontStyle.italic)),
           ),
         ],
       ),
@@ -1180,66 +1215,56 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(', ');
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(8),
           onTap: _selecionarCliente,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F0FB),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.person_rounded, size: 24, color: Brand.blue),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(nome,
                           style: TextStyle(
-                              fontSize: 16 + Brand.textBump01cm,
-                              fontWeight: FontWeight.w800,
+                              fontSize: 14 + Brand.textBump01cm,
+                              fontWeight: FontWeight.w700,
                               color: Color(0xFF0F172A),
-                              height: 1.2)),
-                      if (doc.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                              height: 1.15)),
+                      if (doc.isNotEmpty)
                         Text(doc,
                             style: TextStyle(
-                                fontSize: 13 + Brand.textBump01cm,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF64748B))),
-                      ],
-                      if (rua.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                                fontSize: 12 + Brand.textBump01cm,
+                                color: Color(0xFF64748B),
+                                height: 1.25)),
+                      if (rua.isNotEmpty)
                         Text(rua,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                fontSize: 12 + Brand.textBump01cm,
-                                color: Color(0xFF94A3B8))),
-                      ],
-                      if (limite != null) ...[
-                        const SizedBox(height: 6),
-                        Text('Limite: ${brMoney(limite)}',
+                                fontSize: 11 + Brand.textBump01cm,
+                                color: Color(0xFF94A3B8),
+                                height: 1.25)),
+                      if (limite != null)
+                        Text('Limite ${brMoney(limite)}',
                             style: TextStyle(
-                                fontSize: 12 + Brand.textBump01cm,
-                                fontWeight: FontWeight.w700,
-                                color: Brand.blue)),
-                      ],
+                                fontSize: 11 + Brand.textBump01cm,
+                                fontWeight: FontWeight.w600,
+                                color: Brand.blue,
+                                height: 1.3)),
                     ],
                   ),
                 ),
-                const Icon(Icons.swap_horiz_rounded, color: Brand.blue, size: 22),
+                const Icon(Icons.edit_outlined, color: Color(0xFF94A3B8), size: 18),
               ],
             ),
           ),
@@ -1282,44 +1307,32 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F0FB),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.place_rounded, size: 22, color: Brand.blue),
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.place_outlined, size: 16, color: Color(0xFF64748B)),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Entrega',
-                    style: TextStyle(
-                        fontSize: 12 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF64748B))),
-                const SizedBox(height: 4),
-                for (final linha in linhas)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text(linha,
-                        style: TextStyle(
-                            fontSize: 15 + Brand.textBump01cm,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
-                            height: 1.25)),
-                  ),
+                for (var i = 0; i < linhas.length; i++)
+                  Text(linhas[i],
+                      style: TextStyle(
+                          fontSize: (i == 0 ? 13 : 12) + Brand.textBump01cm,
+                          fontWeight: i == 0 ? FontWeight.w600 : FontWeight.w400,
+                          color: i == 0 ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                          height: 1.25)),
               ],
             ),
           ),
@@ -1330,69 +1343,60 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Widget _section({required IconData icon, required String titulo, required List<Widget> filhos}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE8E8E8)),
-        boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 3))],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(width: 4, color: Brand.blue),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 16, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8F0FB),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(icon, size: 22, color: Brand.blue),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(titulo,
-                              style: TextStyle(
-                                  fontSize: 17 + Brand.textBump01cm,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF0F172A))),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    ...filhos,
-                  ],
-                ),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
             ),
-          ],
-        ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: Brand.blue),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(titulo.toUpperCase(),
+                      style: TextStyle(
+                          fontSize: 11 + Brand.textBump01cm,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: Color(0xFF334155))),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: filhos,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _fieldCaption(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: 3),
         child: Text(t,
             style: TextStyle(
-                fontSize: 12 + Brand.textBump01cm,
+                fontSize: 11 + Brand.textBump01cm,
                 fontWeight: FontWeight.w600,
                 color: const Color(0xFF64748B))),
       );
 
   Widget _field(String caption, Widget control, {Widget? trailing}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1401,7 +1405,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               : Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [_fieldCaption(caption), Padding(padding: const EdgeInsets.only(bottom: 8), child: trailing)],
+                  children: [_fieldCaption(caption), Padding(padding: const EdgeInsets.only(bottom: 3), child: trailing)],
                 ),
           control,
         ],
@@ -1412,16 +1416,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _infoTile({required IconData icon, required String label, required String value, bool muted = false}) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 22, color: muted ? const Color(0xFF94A3B8) : Brand.blue),
-          const SizedBox(width: 12),
+          Icon(icon, size: 16, color: muted ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1431,18 +1436,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12 + Brand.textBump01cm,
+                        fontSize: 10 + Brand.textBump01cm,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF64748B))),
-                const SizedBox(height: 3),
+                        color: const Color(0xFF94A3B8))),
                 Text(value,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 15 + Brand.textBump01cm,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 13 + Brand.textBump01cm,
+                        fontWeight: FontWeight.w600,
                         color: muted ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
-                        height: 1.2)),
+                        height: 1.15)),
               ],
             ),
           ),
@@ -1453,9 +1457,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
 
   Widget _tituloSecao(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 10, top: 4),
-        child: Text(t,
-            style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+        padding: const EdgeInsets.only(bottom: 6, top: 2),
+        child: Text(t.toUpperCase(),
+            style: TextStyle(
+                fontSize: 11 + Brand.textBump01cm,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: Color(0xFF334155))),
       );
 
   Widget _selectorBox({
@@ -1466,16 +1474,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
           height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: const Color(0xFFCBD5E1)),
           ),
           child: Row(
@@ -1511,7 +1519,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFCBD5E1)),
       ),
       child: DropdownButtonHideUnderline(
@@ -1554,33 +1562,50 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       keyboardType: teclado,
       onChanged: onChanged,
       enabled: enabled,
+      style: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
         prefixText: prefix,
         isDense: true,
         filled: true,
-        fillColor: enabled ? Colors.white : const Color(0xFFF1F5F9),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        fillColor: enabled ? Colors.white : const Color(0xFFF8FAFC),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Brand.blue, width: 1.4),
+        ),
       ),
     );
   }
 
   Widget _resumoRow(String label, String valor, {bool destaque = false, Color? valorColor, bool compacto = false}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: compacto ? 2 : 4),
+      padding: EdgeInsets.symmetric(vertical: compacto ? 1.5 : 3),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Text(label,
-              style: TextStyle(
-                  fontWeight: destaque ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: (destaque ? (compacto ? 15 : 16) : (compacto ? 13 : 14)) + Brand.textBump01cm)),
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    fontWeight: destaque ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: (destaque ? (compacto ? 13 : 14) : (compacto ? 12 : 13)) + Brand.textBump01cm,
+                    color: destaque ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                    height: 1.2)),
+          ),
+          const SizedBox(width: 8),
           Text(valor,
               style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: (destaque ? (compacto ? 16 : 17) : (compacto ? 13 : 14)) + Brand.textBump01cm,
-                  color: valorColor ?? (destaque ? Brand.green : const Color(0xFF263238)))),
+                  fontWeight: FontWeight.w700,
+                  fontSize: (destaque ? (compacto ? 14 : 15) : (compacto ? 12 : 13)) + Brand.textBump01cm,
+                  color: valorColor ?? (destaque ? Brand.green : const Color(0xFF0F172A)),
+                  height: 1.2)),
         ],
       ),
     );
@@ -1610,7 +1635,6 @@ class _ItemListaTile extends StatelessWidget {
 
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -1619,6 +1643,7 @@ class _ItemListaTile extends StatelessWidget {
       ),
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
           child: Row(
@@ -1984,6 +2009,7 @@ class _BuscaSheet extends StatefulWidget {
 
 class _BuscaSheetState extends State<_BuscaSheet> {
   final _db = LocalDb.instance;
+  final _buscaCtrl = TextEditingController();
   List<Map<String, dynamic>> _rows = [];
   List<String> _grupos = [];
   String _termo = '';
@@ -1998,15 +2024,76 @@ class _BuscaSheetState extends State<_BuscaSheet> {
     _buscar();
   }
 
-  Future<void> _carregarGrupos() async {
-    final rows = await _db.query(
-      "SELECT DISTINCT grupo FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
-      "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
-    );
-    if (mounted) {
-      setState(() => _grupos =
-          rows.map((r) => (r['grupo'] ?? '').toString()).where((g) => g.isNotEmpty).toList());
+  @override
+  void dispose() {
+    _buscaCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _escanearBarras() async {
+    final codigo = await escanearCodigoBarras(context);
+    if (!mounted || codigo == null || codigo.isEmpty) return;
+
+    _buscaCtrl.text = codigo;
+    _termo = codigo;
+    await _buscar();
+
+    // Match exato de código de barras → seleciona direto.
+    Map<String, dynamic>? exato;
+    for (final r in _rows) {
+      final barras = (r['codigo_barras'] ?? '').toString().trim();
+      final cod = (r['codigo'] ?? '').toString().trim();
+      if (barras == codigo || cod == codigo) {
+        exato = r;
+        break;
+      }
     }
+    if (exato != null && mounted) {
+      Navigator.pop(context, exato);
+    }
+  }
+
+  Future<void> _carregarGrupos() async {
+    // Fonte oficial: cadastro de Grupos do ERP (sincronizado).
+    // Fallback: DISTINCT nos produtos (sem tabela local / sync antigo).
+    var nomes = <String>[];
+
+    try {
+      final rows = await _db.query(
+        "SELECT nome FROM grupos WHERE (ativo = 1 OR ativo IS NULL) "
+        "AND (mostrar_no_app = 1 OR mostrar_no_app IS NULL) "
+        "AND nome IS NOT NULL AND TRIM(nome) <> '' ORDER BY nome",
+      );
+      nomes = rows
+          .map((r) => (r['nome'] ?? '').toString().trim())
+          .where((g) => g.isNotEmpty)
+          .toList();
+    } catch (_) {
+      // Tabela grupos ausente — usa fallback abaixo.
+    }
+
+    if (nomes.isEmpty) {
+      try {
+        final rows = await _db.query(
+          "SELECT DISTINCT grupo AS nome FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
+          "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
+        );
+        nomes = rows
+            .map((r) => (r['nome'] ?? '').toString().trim())
+            .where((g) => g.isNotEmpty)
+            .toList();
+      } catch (_) {
+        nomes = [];
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _grupos = nomes;
+      if (_grupoSel != null && !_grupos.contains(_grupoSel)) {
+        _grupoSel = null;
+      }
+    });
   }
 
   Future<void> _buscar() async {
@@ -2068,8 +2155,44 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(widget.titulo,
-                            style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(widget.titulo,
+                                style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
+                            if (_isProdutos) ...[
+                              const SizedBox(height: 2),
+                              Builder(
+                                builder: (context) {
+                                  final estoque = context.read<AppState>().config.estoqueNome.trim();
+                                  final label = estoque.isEmpty ? 'Estoque não definido' : estoque;
+                                  return Row(
+                                    children: [
+                                      Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 13,
+                                        color: estoque.isEmpty ? Colors.black38 : Brand.blue,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          'Estoque: $label',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12 + Brand.textBump01cm,
+                                            fontWeight: FontWeight.w600,
+                                            color: estoque.isEmpty ? Colors.black45 : Brand.blue,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                       IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
                     ],
@@ -2078,11 +2201,19 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: TextField(
+                    controller: _buscaCtrl,
                     autofocus: false,
                     textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
                       hintText: 'Buscar...',
                       prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _isProdutos
+                          ? IconButton(
+                              tooltip: 'Escanear código de barras',
+                              onPressed: _escanearBarras,
+                              icon: const Icon(Icons.qr_code_scanner, color: Brand.blue),
+                            )
+                          : null,
                       filled: true,
                       fillColor: Colors.white,
                       isDense: true,

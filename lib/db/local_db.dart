@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 11,
+      version: 13,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -60,6 +60,12 @@ class LocalDb {
         }
         if (oldVersion < 11) {
           await db.execute('ALTER TABLE customers ADD COLUMN rg_ie TEXT');
+        }
+        if (oldVersion < 12) {
+          await db.execute(_createCustomerVisitaDiasSql);
+        }
+        if (oldVersion < 13) {
+          await db.execute(_createGruposSql);
         }
       },
       onCreate: (db, _) async {
@@ -108,6 +114,8 @@ class LocalDb {
             total REAL, status TEXT, tipo TEXT
           )''');
         await db.execute(_createHistoricoOrcamentosSql);
+        await db.execute(_createCustomerVisitaDiasSql);
+        await db.execute(_createGruposSql);
         await db.execute('''
           CREATE TABLE outbox_orders (
             uuid TEXT PRIMARY KEY,
@@ -186,6 +194,23 @@ class LocalDb {
             server_id INTEGER
           )''';
 
+  static const String _createCustomerVisitaDiasSql = '''
+          CREATE TABLE IF NOT EXISTS customer_visita_dias (
+            person_id INTEGER NOT NULL,
+            dia_semana INTEGER NOT NULL,
+            ordem INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (person_id, dia_semana)
+          )''';
+
+  static const String _createGruposSql = '''
+          CREATE TABLE IF NOT EXISTS grupos (
+            id INTEGER PRIMARY KEY,
+            nome TEXT,
+            ativo INTEGER DEFAULT 1,
+            mostrar_no_app INTEGER DEFAULT 1,
+            updated_at TEXT
+          )''';
+
   // ---- Catálogo (pull, upsert) -------------------------------------------
 
   Future<void> upsertAll(String table, List<dynamic> rows, Map<String, dynamic> Function(Map<String, dynamic>) map) async {
@@ -207,6 +232,18 @@ class LocalDb {
   Future<void> deleteAll(String table) async {
     final database = await db;
     await database.delete(table);
+  }
+
+  /// Garante a tabela local de transportadoras (pedido pode abrir antes do sync).
+  Future<void> ensureTransportadorasTable() async {
+    final database = await db;
+    await database.execute('''
+      CREATE TABLE IF NOT EXISTS transportadoras (
+        id INTEGER PRIMARY KEY,
+        codigo TEXT,
+        nome TEXT,
+        ativo INTEGER DEFAULT 1
+      )''');
   }
 
   Future<int> count(String table) async {
@@ -369,6 +406,45 @@ class LocalDb {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  /// Substitui os dias de visita locais do cliente (1=Seg … 7=Dom).
+  Future<void> replaceCustomerVisitaDias(int personId, List<int> dias) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('customer_visita_dias',
+          where: 'person_id = ?', whereArgs: [personId]);
+      var ordem = 1;
+      for (final dia in dias) {
+        if (dia < 1 || dia > 7) continue;
+        await txn.insert(
+          'customer_visita_dias',
+          {'person_id': personId, 'dia_semana': dia, 'ordem': ordem++},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  /// Atualiza telefones do cliente na base local.
+  Future<void> updateCustomerPhones(
+    int id, {
+    required String celular1,
+    required String fone1,
+    required String whatsapp,
+  }) async {
+    final database = await db;
+    await database.update(
+      'customers',
+      {
+        'celular1': celular1,
+        'fone1': fone1,
+        'whatsapp': whatsapp,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   /// Enfileira um cliente novo para envio ao ERP na próxima sincronização.
   Future<void> insertOutboxCustomer(Map<String, dynamic> row) async {
     final database = await db;
@@ -397,7 +473,8 @@ class LocalDb {
     final database = await db;
     await database.transaction((txn) async {
       await txn.delete('customers', where: 'id = ?', whereArgs: [localId]);
-      final mapped = Map<String, dynamic>.from(row);
+      final mapped = Map<String, dynamic>.from(row)
+        ..remove('visita_dias');
       mapped['id'] = serverId;
       await txn.insert('customers', mapped, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -411,6 +488,12 @@ class LocalDb {
         'visitas_sem_venda',
         {'cliente_id': serverId, 'status': 'pendente', 'erro': null},
         where: 'cliente_id = ?',
+        whereArgs: [localId],
+      );
+      await txn.update(
+        'customer_visita_dias',
+        {'person_id': serverId},
+        where: 'person_id = ?',
         whereArgs: [localId],
       );
     });

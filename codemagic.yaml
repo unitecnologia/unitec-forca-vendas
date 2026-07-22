@@ -36,6 +36,12 @@ workflows:
         script: |
           set -e
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+      - name: MainActivity com FragmentActivity (biometria)
+        script: |
+          set -e
+          find android -name 'MainActivity.kt' -print0 | xargs -0 sed -i '' \
+            -e 's/io\.flutter\.embedding\.android\.FlutterActivity/io.flutter.embedding.android.FlutterFragmentActivity/g' \
+            -e 's/: FlutterActivity()/: FlutterFragmentActivity()/g'
       - name: Configurar assinatura de release (chave estavel)
         script: |
           set -e

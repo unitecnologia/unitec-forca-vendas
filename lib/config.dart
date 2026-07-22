@@ -17,7 +17,12 @@ class AppConfig {
     this.userId,
     this.userName = '',
     this.vendedorId,
+    this.vendedorNome = '',
+    this.caixaNome = '',
+    this.estoqueNome = '',
     this.lastSyncIso,
+    this.rememberUser = false,
+    this.biometricEnabled = false,
   });
 
   String baseUrl;
@@ -35,7 +40,16 @@ class AppConfig {
   int? userId;
   String userName;
   int? vendedorId;
+  String vendedorNome;
+  String caixaNome;
+  String estoqueNome;
   String? lastSyncIso;
+
+  /// Mantém empresa/usuário após sair (preenche o login automaticamente).
+  bool rememberUser;
+
+  /// Usa digital/biometria para entrar (exige [rememberUser] e senha guardada).
+  bool biometricEnabled;
 
   bool get isConnected => baseUrl.isNotEmpty;
   bool get isApproved => deviceApproved;
@@ -57,7 +71,12 @@ class AppConfig {
         'userId': userId,
         'userName': userName,
         'vendedorId': vendedorId,
+        'vendedorNome': vendedorNome,
+        'caixaNome': caixaNome,
+        'estoqueNome': estoqueNome,
         'lastSyncIso': lastSyncIso,
+        'rememberUser': rememberUser,
+        'biometricEnabled': biometricEnabled,
       };
 
   static AppConfig fromJson(Map<String, dynamic> j) => AppConfig(
@@ -73,7 +92,12 @@ class AppConfig {
         userId: j['userId'],
         userName: j['userName'] ?? '',
         vendedorId: j['vendedorId'],
+        vendedorNome: j['vendedorNome'] ?? '',
+        caixaNome: j['caixaNome'] ?? '',
+        estoqueNome: j['estoqueNome'] ?? '',
         lastSyncIso: j['lastSyncIso'],
+        rememberUser: j['rememberUser'] == true,
+        biometricEnabled: j['biometricEnabled'] == true,
       );
 
   static const _key = 'unitec_fv_config';
@@ -97,10 +121,19 @@ class AppConfig {
   }
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
+  /// Com [rememberUser], empresa e usuário ficam para o próximo login.
   void clearSession() {
     token = '';
-    userId = null;
-    userName = '';
     vendedorId = null;
+    vendedorNome = '';
+    caixaNome = '';
+    estoqueNome = '';
+    if (!rememberUser) {
+      empresaId = null;
+      empresaNome = '';
+      userId = null;
+      userName = '';
+      biometricEnabled = false;
+    }
   }
 }

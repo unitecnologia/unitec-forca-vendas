@@ -166,6 +166,16 @@ class SyncService extends ChangeNotifier {
           'updated_at': r['updated_at'],
         });
 
+    // Rotas / dias de visita: substitui a lista da carteira a cada pull.
+    if (data['visita_dias'] != null) {
+      await _db.deleteAll('customer_visita_dias');
+      await _db.upsertAll('customer_visita_dias', data['visita_dias'] ?? [], (r) => {
+            'person_id': r['person_id'],
+            'dia_semana': r['dia_semana'],
+            'ordem': r['ordem'] ?? 1,
+          });
+    }
+
     // Formas de pagamento liberadas para o app: substitui a lista inteira para
     // refletir formas que deixaram de estar "Disponível Mobile".
     if (data['formas_pagamento'] != null) {
@@ -178,6 +188,18 @@ class SyncService extends ChangeNotifier {
             'nfce': _b(r['nfce']),
             'max_parcelas': r['max_parcelas'],
             'tabelas_json': jsonEncode(r['tabelas_prazo'] ?? []),
+          });
+    }
+
+    // Grupos de produto (filtro na seleção de itens).
+    if (data['grupos'] != null) {
+      await _db.deleteAll('grupos');
+      await _db.upsertAll('grupos', data['grupos'] ?? [], (r) => {
+            'id': r['id'],
+            'nome': r['nome'],
+            'ativo': _b(r['ativo']),
+            'mostrar_no_app': _b(r['mostrar_no_app'] ?? true),
+            'updated_at': r['updated_at'],
           });
     }
 
