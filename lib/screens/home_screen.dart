@@ -31,11 +31,40 @@ class _HomeScreenState extends State<HomeScreen> {
   int _produtos = 0;
   int _clientes = 0;
   int _pendentes = 0;
+  SyncService? _sync;
 
   @override
   void initState() {
     super.initState();
     _atualizarContadores();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final sync = context.read<AppState>().sync;
+    if (!identical(_sync, sync)) {
+      _sync?.removeListener(_onSyncChanged);
+      _sync = sync;
+      _sync!.addListener(_onSyncChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sync?.removeListener(_onSyncChanged);
+    super.dispose();
+  }
+
+  void _onSyncChanged() {
+    final sync = _sync;
+    if (sync == null || !mounted) return;
+    // Após sync OK, o cartão "Sincronizado" já atualiza via ListenableBuilder,
+    // mas os contadores (Pendentes / badge vermelho) precisam ser recarregados.
+    if (sync.status == SyncStatus.ok) {
+      setState(() => _pendentes = sync.pendingCount);
+      _atualizarContadores();
+    }
   }
 
   Future<void> _atualizarContadores() async {

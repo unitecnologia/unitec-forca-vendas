@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 13,
+      version: 15,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -67,6 +67,13 @@ class LocalDb {
         if (oldVersion < 13) {
           await db.execute(_createGruposSql);
         }
+        if (oldVersion < 14) {
+          await db.execute('ALTER TABLE products ADD COLUMN preco_especial REAL DEFAULT 0');
+          await db.execute('ALTER TABLE vendedores ADD COLUMN tabela_venda_id INTEGER');
+        }
+        if (oldVersion < 15) {
+          await db.execute('ALTER TABLE customers ADD COLUMN price_table_id INTEGER');
+        }
       },
       onCreate: (db, _) async {
         await db.execute('''
@@ -74,7 +81,8 @@ class LocalDb {
             id INTEGER PRIMARY KEY,
             codigo TEXT, codigo_barras TEXT, descricao TEXT, unidade TEXT,
             marca TEXT, grupo TEXT,
-            preco_venda REAL, preco_venda_prazo REAL, preco_atacado REAL, qtd_atacado REAL,
+            preco_venda REAL, preco_venda_prazo REAL, preco_atacado REAL, preco_especial REAL,
+            qtd_atacado REAL,
             estoque REAL, estoque_reservado REAL, estoque_disponivel REAL,
             usa_tab_preco INTEGER, mostrar_no_app INTEGER,
             promo_preco_venda REAL, foto_url TEXT, ativo INTEGER, updated_at TEXT
@@ -87,6 +95,7 @@ class LocalDb {
             email TEXT, fone1 TEXT, celular1 TEXT, whatsapp TEXT,
             limite_credito REAL, dia_pgto INTEGER,
             forma_pagamento_id INTEGER, tabela_prazo_id INTEGER, tabela_prazo_dias TEXT,
+            price_table_id INTEGER,
             vendedor_fv_id INTEGER, vendedor_loja_id INTEGER,
             ativo INTEGER, updated_at TEXT
           )''');
@@ -101,7 +110,7 @@ class LocalDb {
           )''');
         await db.execute('''
           CREATE TABLE vendedores (
-            id INTEGER PRIMARY KEY, codigo TEXT, nome TEXT, ativo INTEGER
+            id INTEGER PRIMARY KEY, codigo TEXT, nome TEXT, ativo INTEGER, tabela_venda_id INTEGER
           )''');
         await db.execute('''
           CREATE TABLE financeiro (
@@ -294,9 +303,20 @@ class LocalDb {
   }
 
   /// Atualiza números/situação de pedidos já enviados (pull `pedidos_fv`).
+  /// Se o ERP já reconhece o UUID, tira o pedido da fila pendente.
   Future<void> applyPedidoFvSync(Map<String, dynamic> row) async {
     final uuid = (row['uuid'] ?? '').toString();
     if (uuid.isEmpty) return;
+
+    final database = await db;
+    final existing = await database.query(
+      'outbox_orders',
+      columns: ['status'],
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (existing.isEmpty) return;
 
     final data = <String, dynamic>{};
     final numero = row['numero'];
@@ -309,15 +329,19 @@ class LocalDb {
     }
 
     final situacao = (row['situacao'] ?? '').toString();
+    final localStatus = (existing.first['status'] ?? '').toString();
     if (situacao == 'faturado') {
       data['status'] = 'faturado';
     } else if (situacao == 'cancelado') {
       data['status'] = 'cancelado';
+    } else if (localStatus == 'pendente' || localStatus == 'erro') {
+      // ERP já tem o pedido — não deve continuar contando como pendente no app.
+      data['status'] = 'enviado';
+      data['erro'] = null;
     }
 
     if (data.isEmpty) return;
 
-    final database = await db;
     await database.update(
       'outbox_orders',
       data,
@@ -521,5 +545,60 @@ class LocalDb {
       where: 'uuid = ?',
       whereArgs: [uuid],
     );
+  }
+
+  /// Clientes já atendidos na data local (pedido ou visita sem venda).
+  /// Valor: `venda` | `visita`. Pedido tem prioridade sobre visita.
+  Future<Map<int, String>> clientesAtendidosNoDia(DateTime diaLocal) async {
+    final inicio = DateTime(diaLocal.year, diaLocal.month, diaLocal.day);
+    final fim = inicio.add(const Duration(days: 1));
+    final de = inicio.toUtc().toIso8601String();
+    final ate = fim.toUtc().toIso8601String();
+
+    final database = await db;
+    final out = <int, String>{};
+
+    void marcar(dynamic id, String tipo) {
+      final cid = id is int ? id : int.tryParse('$id');
+      if (cid == null) return;
+      if (tipo == 'venda' || !out.containsKey(cid)) {
+        out[cid] = tipo;
+      }
+    }
+
+    final pedidos = await database.rawQuery(
+      '''
+      SELECT cliente_id FROM outbox_orders
+      WHERE tipo = 'pedido'
+        AND IFNULL(status, '') NOT IN ('rascunho', 'cancelado')
+        AND cliente_id IS NOT NULL
+        AND created_at >= ? AND created_at < ?
+      UNION
+      SELECT cliente_id FROM pedidos_fv_cache
+      WHERE tipo = 'pedido'
+        AND IFNULL(situacao, '') != 'cancelado'
+        AND IFNULL(status, '') NOT IN ('rascunho', 'cancelado')
+        AND cliente_id IS NOT NULL
+        AND created_at >= ? AND created_at < ?
+      ''',
+      [de, ate, de, ate],
+    );
+    for (final r in pedidos) {
+      marcar(r['cliente_id'], 'venda');
+    }
+
+    final visitas = await database.rawQuery(
+      '''
+      SELECT cliente_id FROM visitas_sem_venda
+      WHERE cliente_id IS NOT NULL
+        AND created_at >= ? AND created_at < ?
+      ''',
+      [de, ate],
+    );
+    for (final r in visitas) {
+      marcar(r['cliente_id'], 'visita');
+    }
+
+    return out;
   }
 }

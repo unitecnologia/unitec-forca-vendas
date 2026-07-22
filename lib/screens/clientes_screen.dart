@@ -8,6 +8,7 @@ import '../db/local_db.dart';
 import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import '../ui/uppercase_input.dart';
 import 'novo_cliente_screen.dart';
 import 'novo_pedido_screen.dart';
 
@@ -70,6 +71,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
             child: TextField(
               style: const TextStyle(fontSize: 14),
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: withUpperCase(),
               decoration: InputDecoration(
                 hintText: 'Buscar por nome, código ou CPF/CNPJ',
                 hintStyle: const TextStyle(fontSize: 13.5),

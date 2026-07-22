@@ -30,57 +30,67 @@ class ReportData {
     return rows.map((r) => (r['id'] as num).toInt()).toSet();
   }
 
-  static Future<MinhasVendasResumo> minhasVendas() async {
-    final hoje = DateTime.now();
-    final inicioHoje = startOfDay(hoje);
-    final inicioSemana = startOfWeek(hoje);
-    final inicioMes = startOfMonth(hoje);
+  static Future<MinhasVendasResumo> minhasVendas({
+    DateTime? inicio,
+    DateTime? fim,
+  }) async {
+    final agora = DateTime.now();
+    final de = startOfDay(inicio ?? startOfMonth(agora));
+    // fim inclusivo até o fim do dia
+    final ateBase = startOfDay(fim ?? agora);
+    final ate = ateBase.add(const Duration(days: 1));
 
     final vendas = await _db.query(
       'SELECT data, total FROM historico_vendas WHERE data IS NOT NULL',
     );
 
-    double totalHoje = 0, totalSemana = 0, totalMes = 0;
-    var qtdHoje = 0, qtdSemana = 0, qtdMes = 0;
+    double total = 0;
+    var qtd = 0;
 
     for (final v in vendas) {
       final d = DateTime.tryParse((v['data'] ?? '').toString());
       if (d == null) continue;
       final dia = startOfDay(d);
-      final total = (v['total'] as num?)?.toDouble() ?? 0;
-
-      if (!dia.isBefore(inicioMes)) {
-        totalMes += total;
-        qtdMes++;
-      }
-      if (!dia.isBefore(inicioSemana)) {
-        totalSemana += total;
-        qtdSemana++;
-      }
-      if (!dia.isBefore(inicioHoje)) {
-        totalHoje += total;
-        qtdHoje++;
-      }
+      if (dia.isBefore(de) || !dia.isBefore(ate)) continue;
+      total += (v['total'] as num?)?.toDouble() ?? 0;
+      qtd++;
     }
 
     return MinhasVendasResumo(
-      totalHoje: totalHoje,
-      totalSemana: totalSemana,
-      totalMes: totalMes,
-      qtdHoje: qtdHoje,
-      qtdSemana: qtdSemana,
-      qtdMes: qtdMes,
+      inicio: de,
+      fim: ateBase,
+      total: total,
+      qtd: qtd,
     );
   }
 
-  static Future<List<ClienteAtendido>> clientesAtendidos(int? vendedorId) async {
+  static Future<List<ClienteAtendido>> clientesAtendidos(
+    int? vendedorId, {
+    DateTime? inicio,
+    DateTime? fim,
+  }) async {
     final carteira = await carteiraClienteIds(vendedorId);
     if (carteira.isEmpty) return [];
+
+    final agora = DateTime.now();
+    final de = startOfDay(inicio ?? startOfMonth(agora));
+    final ateBase = startOfDay(fim ?? agora);
+    final ate = ateBase.add(const Duration(days: 1));
+
+    bool noPeriodo(String? dataStr) {
+      if (dataStr == null || dataStr.isEmpty) return false;
+      final raw = dataStr.length >= 10 ? dataStr.substring(0, 10) : dataStr;
+      final d = DateTime.tryParse(raw);
+      if (d == null) return false;
+      final dia = startOfDay(d);
+      return !dia.isBefore(de) && dia.isBefore(ate);
+    }
 
     final map = <int, ClienteAtendido>{};
 
     void merge(int? id, {double addTotal = 0, int addPedidos = 0, String? dataCompra}) {
       if (id == null || id <= 0 || !carteira.contains(id)) return;
+      if (dataCompra != null && !noPeriodo(dataCompra)) return;
       final c = map.putIfAbsent(id, () => ClienteAtendido(clienteId: id));
       c.totalComprado += addTotal;
       c.qtdPedidos += addPedidos;
@@ -104,11 +114,12 @@ class ReportData {
       "WHERE cliente_id IS NOT NULL AND tipo = 'pedido' AND status IN ('pendente','enviado')",
     );
     for (final o in outbox) {
+      final created = (o['created_at'] ?? '').toString();
       merge(
         (o['cliente_id'] as num?)?.toInt(),
         addTotal: (o['total'] as num?)?.toDouble() ?? 0,
         addPedidos: 1,
-        dataCompra: (o['created_at'] ?? '').toString().substring(0, 10),
+        dataCompra: created.length >= 10 ? created.substring(0, 10) : created,
       );
     }
 
@@ -117,9 +128,10 @@ class ReportData {
     );
     for (final v in visitas) {
       final id = (v['cliente_id'] as num?)?.toInt();
-      if (id == null || !carteira.contains(id)) continue;
+      final created = (v['created_at'] ?? '').toString();
+      if (id == null || !carteira.contains(id) || !noPeriodo(created)) continue;
       map.putIfAbsent(id, () => ClienteAtendido(clienteId: id));
-      map[id]!._atualizarUltimaVisita((v['created_at'] ?? '').toString());
+      map[id]!._atualizarUltimaVisita(created);
     }
 
     if (map.isEmpty) return [];
@@ -299,8 +311,18 @@ class ReportData {
     return lista;
   }
 
-  static Future<List<VisitaRegistro>> visitasRealizadas(int? vendedorId) async {
+  static Future<List<VisitaRegistro>> visitasRealizadas(
+    int? vendedorId, {
+    DateTime? inicio,
+    DateTime? fim,
+  }) async {
     if (vendedorId == null) return [];
+
+    final agora = DateTime.now();
+    final de = startOfDay(inicio ?? startOfMonth(agora));
+    final ateBase = startOfDay(fim ?? agora);
+    final ate = ateBase.add(const Duration(days: 1));
+
     final rows = await _db.query(
       'SELECT v.uuid, v.cliente_id, v.motivo, v.latitude, v.longitude, v.created_at, v.status, '
       'c.nome_razao, c.whatsapp, c.celular1, c.fone1 '
@@ -309,7 +331,13 @@ class ReportData {
       'ORDER BY v.created_at DESC LIMIT 500',
       [vendedorId],
     );
-    return rows.map(VisitaRegistro.fromRow).toList();
+
+    return rows.map(VisitaRegistro.fromRow).where((v) {
+      final d = v.createdAt;
+      if (d == null) return false;
+      final dia = startOfDay(d.toLocal());
+      return !dia.isBefore(de) && dia.isBefore(ate);
+    }).toList();
   }
 
   static String _telefone(Map<String, dynamic> c) {
@@ -334,22 +362,18 @@ class ReportData {
 
 class MinhasVendasResumo {
   const MinhasVendasResumo({
-    required this.totalHoje,
-    required this.totalSemana,
-    required this.totalMes,
-    required this.qtdHoje,
-    required this.qtdSemana,
-    required this.qtdMes,
+    required this.inicio,
+    required this.fim,
+    required this.total,
+    required this.qtd,
   });
 
-  final double totalHoje;
-  final double totalSemana;
-  final double totalMes;
-  final int qtdHoje;
-  final int qtdSemana;
-  final int qtdMes;
+  final DateTime inicio;
+  final DateTime fim;
+  final double total;
+  final int qtd;
 
-  double get ticketMedioMes => qtdMes > 0 ? totalMes / qtdMes : 0;
+  double get ticketMedio => qtd > 0 ? total / qtd : 0;
 }
 
 class ClienteAtendido {

@@ -6,6 +6,7 @@ import '../db/local_db.dart';
 import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import '../ui/uppercase_input.dart';
 import 'pix_qr_screen.dart';
 
 class TitulosScreen extends StatefulWidget {
@@ -110,6 +111,8 @@ class _TitulosScreenState extends State<TitulosScreen> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: withUpperCase(),
               decoration: InputDecoration(
                 hintText: 'Buscar por cliente ou documento',
                 prefixIcon: const Icon(Icons.search),
@@ -154,8 +157,7 @@ class _TitulosScreenState extends State<TitulosScreen> {
     final temAtraso = g.temAtraso(inicioHoje);
 
     return Container(
-      decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: Brand.surfaceCard(radius: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -169,7 +171,7 @@ class _TitulosScreenState extends State<TitulosScreen> {
               }
             }),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -182,27 +184,27 @@ class _TitulosScreenState extends State<TitulosScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            fontSize: 14.5,
-                            color: temAtraso ? Colors.red : Colors.black87,
+                            fontSize: 13.5,
+                            color: temAtraso ? Colors.red : const Color(0xFF1E293B),
                           ),
                         ),
                       ),
                       Text(
                         '${g.titulos.length}',
                         style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black45),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black45,
+                        ),
                       ),
                       AnimatedRotation(
                         turns: aberto ? 0.5 : 0,
                         duration: const Duration(milliseconds: 180),
-                        child: const Icon(Icons.expand_more,
-                            color: Colors.black45),
+                        child: const Icon(Icons.expand_more, size: 22, color: Colors.black45),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 5),
                   _resumo(g, inicioHoje),
                 ],
               ),
@@ -211,7 +213,7 @@ class _TitulosScreenState extends State<TitulosScreen> {
           if (aberto) ...[
             const Divider(height: 1),
             ...g.titulos.map((t) => _tituloLinha(t, inicioHoje)),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
           ],
         ],
       ),
@@ -222,38 +224,38 @@ class _TitulosScreenState extends State<TitulosScreen> {
     final disponivel = g.limite - g.totalAberto;
     final atraso = g.totalAtraso(inicioHoje);
     return Wrap(
-      spacing: 12,
-      runSpacing: 2,
+      spacing: 10,
+      runSpacing: 3,
       children: [
-        _resumoItem('Títulos', brMoney(g.totalValor)),
-        _resumoItem('Aberto', brMoney(g.totalAberto)),
-        _resumoItem('Limite', brMoney(g.limite)),
-        _resumoItem('Disponível', brMoney(disponivel),
-            valorColor: disponivel < 0 ? Colors.red : null),
+        _meta(Icons.receipt_long_outlined, brMoney(g.totalValor)),
+        _meta(Icons.account_balance_wallet_outlined, brMoney(g.totalAberto), color: Brand.blue),
+        _meta(Icons.credit_card_outlined, 'Lim ${brMoney(g.limite)}'),
+        _meta(
+          Icons.trending_up_outlined,
+          'Disp ${brMoney(disponivel)}',
+          color: disponivel < 0 ? Colors.red : null,
+        ),
         if (atraso > 0)
-          _resumoItem('Atrasado', brMoney(atraso),
-              valorColor: Colors.red, destaque: true),
+          _meta(Icons.warning_amber_rounded, 'Atras. ${brMoney(atraso)}', color: Colors.red),
       ],
     );
   }
 
-  Widget _resumoItem(String label, String valor,
-      {Color? valorColor, bool destaque = false}) {
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(fontSize: 11, color: Colors.black54),
-        children: [
-          TextSpan(text: '$label '),
-          TextSpan(
-            text: valor,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: destaque ? FontWeight.w800 : FontWeight.w700,
-              color: valorColor ?? Colors.black87,
-            ),
+  Widget _meta(IconData icon, String text, {Color? color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color ?? const Color(0xFF64748B)),
+        const SizedBox(width: 3),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: color ?? const Color(0xFF334155),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -263,47 +265,45 @@ class _TitulosScreenState extends State<TitulosScreen> {
     final cor = vencido ? Colors.red : Colors.black87;
     final doc = (t['documento'] ?? t['numero'] ?? '').toString();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+      padding: const EdgeInsets.fromLTRB(12, 5, 8, 5),
       child: Row(
         children: [
-          Icon(vencido ? Icons.error_outline : Icons.event_outlined,
-              size: 15, color: vencido ? Colors.red : Colors.black45),
+          Icon(
+            vencido ? Icons.error_outline : Icons.event_outlined,
+            size: 14,
+            color: vencido ? Colors.red : Colors.black45,
+          ),
           const SizedBox(width: 6),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Venc. ${brDate(venc)}${vencido ? '  ·  VENCIDO' : ''}',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: cor,
-                    fontWeight: vencido ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-                if (doc.isNotEmpty)
-                  Text('Doc. $doc',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: vencido
-                              ? Colors.red.shade300
-                              : Colors.black45)),
-              ],
+            child: Text(
+              [
+                'Venc. ${brDate(venc)}',
+                if (vencido) 'VENCIDO',
+                if (doc.isNotEmpty) 'Doc. $doc',
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: cor,
+                fontWeight: vencido ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
           ),
           Text(
             brMoney(t['saldo'] as num?),
             style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: vencido ? Colors.red : Brand.blue),
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+              color: vencido ? Colors.red : Brand.blue,
+            ),
           ),
-          const SizedBox(width: 6),
           IconButton(
             tooltip: 'Receber via Pix',
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            icon: const Icon(Icons.qr_code_2, color: Brand.green),
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+            icon: const Icon(Icons.qr_code_2, size: 22, color: Brand.green),
             onPressed: () => _cobrarPixTitulo(t),
           ),
         ],

@@ -46,6 +46,15 @@ class _WaitingApprovalScreenState extends State<WaitingApprovalScreen> {
     });
     try {
       final state = context.read<AppState>();
+      // Se o aparelho já estava autorizado, só confirma no servidor.
+      if (state.config.deviceApproved && state.config.deviceUuid.isNotEmpty) {
+        final status = await state.refreshApproval();
+        if (state.isApproved) {
+          _nomeCtrl.text = state.config.deviceName;
+          if (mounted) setState(() => _status = status);
+          return;
+        }
+      }
       await state.registerDevice();
       _nomeCtrl.text = state.config.deviceName;
     } catch (e) {

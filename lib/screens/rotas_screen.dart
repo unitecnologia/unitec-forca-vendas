@@ -41,6 +41,8 @@ class _RotasScreenState extends State<RotasScreen> {
 
   late int _diaSemana;
   List<Map<String, dynamic>> _rows = [];
+  /// person_id → `venda` | `visita`
+  Map<int, String> _atendidos = {};
   bool _carregando = true;
 
   @override
@@ -55,6 +57,13 @@ class _RotasScreenState extends State<RotasScreen> {
     return DateTime.now().weekday;
   }
 
+  /// Data civil da semana corrente correspondente ao dia selecionado.
+  DateTime _dataDoDiaSelecionado() {
+    final now = DateTime.now();
+    final hoje = DateTime(now.year, now.month, now.day);
+    return hoje.subtract(Duration(days: hoje.weekday - _diaSemana));
+  }
+
   Future<void> _buscar() async {
     setState(() => _carregando = true);
     final vendedorId = context.read<AppState>().config.vendedorId;
@@ -66,9 +75,11 @@ class _RotasScreenState extends State<RotasScreen> {
       'ORDER BY v.ordem ASC, c.nome_razao ASC',
       [_diaSemana, ...FvCarteira.args(vendedorId)],
     );
+    final atendidos = await _db.clientesAtendidosNoDia(_dataDoDiaSelecionado());
     if (mounted) {
       setState(() {
         _rows = rows;
+        _atendidos = atendidos;
         _carregando = false;
       });
     }
@@ -84,6 +95,7 @@ class _RotasScreenState extends State<RotasScreen> {
         ),
       ),
     );
+    if (mounted) await _buscar();
   }
 
   /// Mesmo formato do ERP (`endereco_lista`).
@@ -182,9 +194,20 @@ class _RotasScreenState extends State<RotasScreen> {
       ..showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
   }
 
+  int? _clienteId(Map<String, dynamic> c) {
+    final id = c['id'];
+    if (id is int) return id;
+    return int.tryParse('$id');
+  }
+
   @override
   Widget build(BuildContext context) {
     final diaLabel = _diasLongos[_diaSemana] ?? '';
+    final total = _rows.length;
+    final feitos = _rows.where((c) {
+      final id = _clienteId(c);
+      return id != null && _atendidos.containsKey(id);
+    }).length;
 
     return Scaffold(
       backgroundColor: Brand.bg,
@@ -192,6 +215,13 @@ class _RotasScreenState extends State<RotasScreen> {
         title: const Text('Rotas'),
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Atualizar',
+            onPressed: _carregando ? null : _buscar,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -202,10 +232,37 @@ class _RotasScreenState extends State<RotasScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Clientes de $diaLabel',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Clientes de $diaLabel',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                    ),
+                    if (!_carregando && total > 0)
+                      Text(
+                        '$feitos de $total',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: feitos == total ? Brand.green : Brand.blue,
+                        ),
+                      ),
+                  ],
                 ),
+                if (!_carregando && total > 0) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      value: total == 0 ? 0 : feitos / total,
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      color: feitos == total ? Brand.green : Brand.blue,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -258,6 +315,10 @@ class _RotasScreenState extends State<RotasScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (_, i) {
                   final c = _rows[i];
+                  final id = _clienteId(c);
+                  final status = id == null ? null : _atendidos[id];
+                  final passou = status != null;
+                  final foiVenda = status == 'venda';
                   final ordem = c['visita_ordem'] ?? (i + 1);
                   final cidade = [c['cidade_nome'], c['uf']]
                       .where((e) => (e ?? '').toString().isNotEmpty)
@@ -265,53 +326,126 @@ class _RotasScreenState extends State<RotasScreen> {
                   final endereco = _enderecoCompleto(c);
                   final temMapa = endereco.isNotEmpty;
 
+                  final accent = passou ? Brand.green : Brand.blue;
+                  final cardBg = passou
+                      ? const Color(0xFFECFDF5)
+                      : Colors.white;
+                  final borderColor = passou
+                      ? Brand.green.withValues(alpha: 0.35)
+                      : Brand.blue.withValues(alpha: 0.10);
+
                   return Material(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      leading: CircleAvatar(
-                        backgroundColor: Brand.blue.withValues(alpha: 0.12),
-                        child: Text(
-                          '$ordem',
-                          style: const TextStyle(
-                            color: Brand.blue,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    color: cardBg,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: borderColor),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => _fazerPedido(c),
+                      child: IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(width: 4, color: accent),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: accent.withValues(alpha: 0.14),
+                                      child: passou
+                                          ? Icon(Icons.check_rounded, color: accent, size: 22)
+                                          : Text(
+                                              '$ordem',
+                                              style: TextStyle(
+                                                color: accent,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            (c['nome_razao'] ?? '').toString(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: passou
+                                                  ? const Color(0xFF14532D)
+                                                  : Brand.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            [
+                                              if (cidade.isNotEmpty) cidade,
+                                              'Cód. ${c['codigo'] ?? ''}',
+                                            ].join(' · '),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.black54,
+                                              fontSize: 12.5,
+                                            ),
+                                          ),
+                                          if (passou) ...[
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Brand.green.withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(99),
+                                              ),
+                                              child: Text(
+                                                foiVenda ? 'Atendido · venda' : 'Visitado · sem venda',
+                                                style: const TextStyle(
+                                                  color: Brand.green,
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: temMapa ? 'Abrir no mapa' : 'Sem endereço',
+                                      onPressed: temMapa ? () => _abrirMapa(c) : null,
+                                      icon: Icon(
+                                        Icons.map_outlined,
+                                        color: temMapa
+                                            ? (passou ? Brand.green : Brand.blue)
+                                            : Colors.black26,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: passou ? 'Novo pedido' : 'Fazer pedido',
+                                      icon: Icon(
+                                        passou
+                                            ? Icons.check_circle_rounded
+                                            : Icons.add_shopping_cart,
+                                        color: Brand.green,
+                                      ),
+                                      onPressed: () => _fazerPedido(c),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      title: Text(
-                        (c['nome_razao'] ?? '').toString(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        [
-                          if (cidade.isNotEmpty) cidade,
-                          'Cód. ${c['codigo'] ?? ''}',
-                        ].join(' · '),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: temMapa ? 'Abrir no mapa' : 'Sem endereço',
-                            onPressed: temMapa ? () => _abrirMapa(c) : null,
-                            icon: Icon(
-                              Icons.map_outlined,
-                              color: temMapa ? Brand.blue : Colors.black26,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Fazer pedido',
-                            icon: const Icon(Icons.add_shopping_cart, color: Brand.green),
-                            onPressed: () => _fazerPedido(c),
-                          ),
-                        ],
-                      ),
-                      onTap: () => _fazerPedido(c),
                     ),
                   );
                 },

@@ -12,6 +12,7 @@ import '../db/local_db.dart';
 import '../ui/brand.dart';
 import '../ui/cnpj_lookup.dart';
 import '../ui/cpf_cnpj_formatter.dart';
+import '../ui/uppercase_input.dart';
 
 /// Cadastro rápido de um novo cliente direto no aparelho.
 ///
@@ -564,7 +565,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
     TextEditingController c,
     String label, {
     bool obrigatorio = false,
-    bool capitalizar = false,
+    bool capitalizar = true,
     TextInputType? teclado,
     int? maxLength,
     List<TextInputFormatter>? formatters,
@@ -577,7 +578,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
         keyboardType: teclado,
         textCapitalization: capitalizar ? TextCapitalization.characters : TextCapitalization.none,
         maxLength: maxLength,
-        inputFormatters: formatters,
+        inputFormatters: capitalizar ? withUpperCase(formatters) : formatters,
         style: TextStyle(fontSize: 14 + Brand.textBump01cm, color: Brand.textPrimary),
         validator: validator ??
             (obrigatorio

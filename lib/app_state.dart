@@ -94,7 +94,7 @@ class AppState extends ChangeNotifier {
     config.baseUrl = baseUrl;
     config.lastBaseUrl = baseUrl;
     await ensureDeviceIdentity();
-    config.deviceApproved = false;
+    // Não zera autorização aqui: o status real vem do ERP (register/refresh).
     await config.save();
     notifyListeners();
   }
@@ -196,6 +196,11 @@ class AppState extends ChangeNotifier {
       config.vendedorNome = (user['vendedor_nome'] ?? '').toString();
       config.caixaNome = (user['caixa_nome'] ?? '').toString();
       config.estoqueNome = (user['estoque_nome'] ?? '').toString();
+      config.tabelaVendaId = user['tabela_venda_id'] is int
+          ? user['tabela_venda_id'] as int
+          : int.tryParse('${user['tabela_venda_id'] ?? ''}');
+      config.tabelaVendaCodigo = (user['tabela_venda_codigo'] ?? '').toString();
+      config.tabelaVendaDescricao = (user['tabela_venda_descricao'] ?? '').toString();
     }
     config.rememberUser = rememberUser;
     config.biometricEnabled = rememberUser && biometricEnabled;
@@ -223,20 +228,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Desconecta totalmente (volta à tela de conexão). Mantém o device_uuid
-  /// para que, ao reconectar, o ERP reconheça o mesmo aparelho.
+  /// Desconecta do servidor (volta à tela de conexão). Mantém o device_uuid
+  /// e a autorização local — ao reconectar, o ERP confirma o mesmo aparelho.
   Future<void> disconnect() async {
     sync.stop();
     await CredentialStore.clearSenha();
     config
       ..baseUrl = ''
-      ..deviceApproved = false
       ..pairingCode = ''
       ..rememberUser = false
       ..biometricEnabled = false
       ..empresaId = null
       ..empresaNome = ''
       ..clearSession();
+    // Mantém deviceApproved + deviceUuid: não pede autorização de novo.
     await config.save();
     notifyListeners();
   }

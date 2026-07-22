@@ -1,18 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../media/produto_foto_cache.dart';
 import 'brand.dart';
 import 'estoque_chips.dart';
 import 'format.dart';
+import 'produto_foto_image.dart';
 
-/// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.
-String? produtoFotoUrl(String base, dynamic fotoUrl) {
-  final f = (fotoUrl ?? '').toString().trim();
-  if (f.isEmpty) return null;
-  if (f.startsWith('http://') || f.startsWith('https://')) return f;
-  final b = base.replaceFirst(RegExp(r'/+$'), '');
-  final path = f.startsWith('/') ? f : '/$f';
-  return '$b$path';
-}
+export '../media/produto_foto_cache.dart' show produtoFotoUrl;
 
 /// Card de produto na listagem (Produtos e seleção no pedido).
 class ProdutoListCard extends StatelessWidget {
@@ -32,6 +26,7 @@ class ProdutoListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final preco = (produto['preco_venda'] as num?)?.toDouble() ?? 0;
+    final productId = (produto['id'] as num?)?.toInt();
     final fotoUrl = produtoFotoUrl(baseUrl, produto['foto_url']);
     final descricao = (produto['descricao'] ?? '').toString();
     final codigo = (produto['codigo'] ?? '').toString();
@@ -51,7 +46,25 @@ class ProdutoListCard extends StatelessWidget {
             children: [
               GestureDetector(
                 onTap: onFotoTap,
-                child: _ProdutoMiniatura(url: fotoUrl),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Brand.green.withValues(alpha: 0.2)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: ProdutoFotoImage(
+                    productId: productId,
+                    networkUrl: fotoUrl,
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.contain,
+                    borderRadius: 12,
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -100,50 +113,6 @@ class ProdutoListCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ProdutoMiniatura extends StatelessWidget {
-  const _ProdutoMiniatura({required this.url});
-
-  final String? url;
-
-  @override
-  Widget build(BuildContext context) {
-    const double size = 56;
-    final placeholder = Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Brand.green.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Brand.green.withValues(alpha: 0.2)),
-      ),
-      child: const Icon(Icons.inventory_2_outlined, color: Brand.green, size: 26),
-    );
-
-    if (url == null) return placeholder;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.network(
-        url!,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => placeholder,
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return SizedBox(
-            width: size,
-            height: size,
-            child: const Center(
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-          );
-        },
       ),
     );
   }

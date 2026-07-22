@@ -3,64 +3,19 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../pricing/product_preco.dart';
 import '../ui/barcode_scan.dart';
 import '../ui/brand.dart';
 import '../ui/estoque_chips.dart';
 import '../ui/format.dart';
+import '../ui/produto_busca.dart';
+import '../ui/produto_foto_image.dart';
+import '../ui/produto_foto_viewer.dart';
 import '../ui/produto_list_card.dart';
+import '../ui/uppercase_input.dart';
 
 /// Monta a URL completa da foto a partir do caminho relativo vindo do ERP.
 String? _fotoFullUrl(String base, dynamic fotoUrl) => produtoFotoUrl(base, fotoUrl);
-
-/// Visualizador de imagem em tela cheia com zoom (pinça / duplo toque).
-class FotoViewer extends StatelessWidget {
-  const FotoViewer({super.key, required this.url, this.titulo});
-
-  final String url;
-  final String? titulo;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(titulo ?? 'Foto do produto',
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.8,
-          maxScale: 5,
-          child: Image.network(
-            url,
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const CircularProgressIndicator(color: Colors.white);
-            },
-            errorBuilder: (_, __, ___) => const Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
-                SizedBox(height: 12),
-                Text('Não foi possível carregar a foto.',
-                    style: TextStyle(color: Colors.white70)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-void _abrirFoto(BuildContext context, String url, String? titulo) {
-  Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => FotoViewer(url: url, titulo: titulo)),
-  );
-}
 
 class ProdutosScreen extends StatefulWidget {
   const ProdutosScreen({super.key});
@@ -97,11 +52,10 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   }
 
   Future<void> _buscar() async {
-    final like = '%${_termo.trim()}%';
+    final f = ProdutoBusca.filtro(_termo);
     final rows = await _db.query(
-      "SELECT * FROM products WHERE ativo = 1 AND mostrar_no_app = 1 AND (descricao LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? OR marca LIKE ?) "
-      'ORDER BY descricao LIMIT 200',
-      [like, like, like, like],
+      'SELECT * FROM products WHERE ${f.whereExtra} ORDER BY ${f.orderBy} LIMIT 200',
+      f.args,
     );
     if (mounted) {
       setState(() {
@@ -165,6 +119,8 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
             ),
             child: TextField(
               controller: _buscaCtrl,
+              textCapitalization: TextCapitalization.characters,
+              inputFormatters: withUpperCase(),
               decoration: InputDecoration(
                 hintText: 'Buscar por descrição, código ou marca',
                 prefixIcon: const Icon(Icons.search, color: Brand.blue),
@@ -203,8 +159,14 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                   onTap: () => _detalhe(_rows[i]),
                   onFotoTap: () {
                     final url = _fotoFullUrl(base, _rows[i]['foto_url']);
-                    if (url != null) {
-                      _abrirFoto(context, url, (_rows[i]['descricao'] ?? '').toString());
+                    final id = (_rows[i]['id'] as num?)?.toInt();
+                    if (url != null || id != null) {
+                      abrirProdutoFoto(
+                        context,
+                        productId: id,
+                        url: url,
+                        titulo: (_rows[i]['descricao'] ?? '').toString(),
+                      );
                     }
                   },
                 ),
@@ -219,7 +181,9 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     final promo = (p['promo_preco_venda'] as num?)?.toDouble() ?? 0;
     final base = context.read<AppState>().config.baseUrl;
     final fotoUrl = _fotoFullUrl(base, p['foto_url']);
+    final productId = (p['id'] as num?)?.toInt();
     final descricao = (p['descricao'] ?? '').toString();
+    final temFoto = fotoUrl != null || productId != null;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -244,27 +208,36 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (fotoUrl != null)
+              if (temFoto && fotoUrl != null)
                 Center(
                   child: GestureDetector(
-                    onTap: () => _abrirFoto(sheetCtx, fotoUrl, descricao),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(
-                        fotoUrl,
+                    onTap: () => abrirProdutoFoto(
+                      sheetCtx,
+                      productId: productId,
+                      url: fotoUrl,
+                      titulo: descricao,
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      height: 160,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: ProdutoFotoImage(
+                        productId: productId,
+                        networkUrl: fotoUrl,
                         height: 160,
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                        loadingBuilder: (context, child, progress) => progress == null
-                            ? child
-                            : const SizedBox(
-                                height: 160,
-                                child: Center(child: CircularProgressIndicator())),
+                        borderRadius: 14,
+                        placeholderIconSize: 40,
                       ),
                     ),
                   ),
                 ),
-              if (fotoUrl != null) const SizedBox(height: 14),
+              if (temFoto && fotoUrl != null) const SizedBox(height: 14),
               Text(descricao,
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
@@ -272,16 +245,189 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                   style: const TextStyle(color: Colors.black54)),
               const SizedBox(height: 16),
               EstoquePainel(produto: p),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: productId == null
+                      ? null
+                      : () => _consultarEstoqueFiliais(sheetCtx, p),
+                  icon: const Icon(Icons.storefront_outlined, size: 18),
+                  label: const Text('Consultar estoque nas filiais'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Brand.blue,
+                    side: BorderSide(color: Brand.blue.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
               const Divider(height: 1),
               const SizedBox(height: 10),
-              _linhaPreco('Preço à vista', brMoney(p['preco_venda'] as num?), Brand.precoVista),
-              _linhaPreco('Preço a prazo', brMoney(p['preco_venda_prazo'] as num?), Brand.precoPrazo),
-              _linhaPreco('Preço atacado', brMoney(p['preco_atacado'] as num?), Brand.precoAtacado),
+              _linhaPreco('Preço varejo', brMoney(ProductPreco.precoVarejo(p)), Brand.precoVarejo),
+              _linhaPreco('Preço atacado', brMoney(ProductPreco.precoAtacado(p)), Brand.precoAtacado),
+              _linhaPreco('Preço especial', brMoney(ProductPreco.precoEspecial(p)), Brand.precoEspecial),
               if (promo > 0)
-                _linhaPreco('Promoção', brMoney(promo), const Color(0xFF7C3AED)),
+                _linhaPreco('Promoção', brMoney(promo), Brand.precoEspecial),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _consultarEstoqueFiliais(BuildContext context, Map<String, dynamic> p) async {
+    final productId = (p['id'] as num?)?.toInt();
+    if (productId == null) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final data = await context.read<AppState>().api.estoqueFiliais(productId);
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // loading
+
+      final filiais = (data['filiais'] as List?) ?? const [];
+      final unidade = (data['unidade'] ?? p['unidade'] ?? '').toString();
+      final titulo = (data['descricao'] ?? p['descricao'] ?? 'Produto').toString();
+
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Estoque nas filiais',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Brand.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  titulo,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 12),
+                if (filiais.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('Nenhum depósito encontrado.')),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.55,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: filiais.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final f = Map<String, dynamic>.from(filiais[i] as Map);
+                        final empresa = (f['empresa_nome'] ?? '').toString();
+                        final estoque = (f['estoque_nome'] ?? '').toString();
+                        final atual = (f['atual'] as num?)?.toDouble() ?? 0;
+                        final reserv = (f['reservado'] as num?)?.toDouble() ?? 0;
+                        final disp = (f['disponivel'] as num?)?.toDouble() ?? 0;
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                empresa,
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                              ),
+                              if (estoque.isNotEmpty)
+                                Text(
+                                  estoque,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _chipEstoque('Atual', fmtEstoque(atual), Brand.estoqueAtual, Colors.white),
+                                  const SizedBox(width: 6),
+                                  _chipEstoque(
+                                    'Reserv.',
+                                    fmtEstoque(reserv),
+                                    Brand.estoqueReservado,
+                                    Brand.estoqueReservadoText,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _chipEstoque(
+                                    'Disp.',
+                                    unidade.isEmpty ? fmtEstoque(disp) : '${fmtEstoque(disp)} $unidade',
+                                    Brand.estoqueDisponivel,
+                                    Colors.white,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop(); // loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível consultar o estoque: $e')),
+      );
+    }
+  }
+
+  Widget _chipEstoque(String label, String valor, Color bg, Color fg) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+        child: Column(
+          children: [
+            Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: fg.withValues(alpha: 0.9))),
+            const SizedBox(height: 2),
+            Text(
+              valor,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: fg),
+            ),
+          ],
         ),
       ),
     );

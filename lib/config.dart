@@ -20,6 +20,9 @@ class AppConfig {
     this.vendedorNome = '',
     this.caixaNome = '',
     this.estoqueNome = '',
+    this.tabelaVendaId,
+    this.tabelaVendaCodigo = '',
+    this.tabelaVendaDescricao = '',
     this.lastSyncIso,
     this.rememberUser = false,
     this.biometricEnabled = false,
@@ -43,6 +46,9 @@ class AppConfig {
   String vendedorNome;
   String caixaNome;
   String estoqueNome;
+  int? tabelaVendaId;
+  String tabelaVendaCodigo;
+  String tabelaVendaDescricao;
   String? lastSyncIso;
 
   /// Mantém empresa/usuário após sair (preenche o login automaticamente).
@@ -74,6 +80,9 @@ class AppConfig {
         'vendedorNome': vendedorNome,
         'caixaNome': caixaNome,
         'estoqueNome': estoqueNome,
+        'tabelaVendaId': tabelaVendaId,
+        'tabelaVendaCodigo': tabelaVendaCodigo,
+        'tabelaVendaDescricao': tabelaVendaDescricao,
         'lastSyncIso': lastSyncIso,
         'rememberUser': rememberUser,
         'biometricEnabled': biometricEnabled,
@@ -95,6 +104,9 @@ class AppConfig {
         vendedorNome: j['vendedorNome'] ?? '',
         caixaNome: j['caixaNome'] ?? '',
         estoqueNome: j['estoqueNome'] ?? '',
+        tabelaVendaId: j['tabelaVendaId'],
+        tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
+        tabelaVendaDescricao: j['tabelaVendaDescricao'] ?? '',
         lastSyncIso: j['lastSyncIso'],
         rememberUser: j['rememberUser'] == true,
         biometricEnabled: j['biometricEnabled'] == true,
@@ -128,6 +140,9 @@ class AppConfig {
     vendedorNome = '';
     caixaNome = '';
     estoqueNome = '';
+    tabelaVendaId = null;
+    tabelaVendaCodigo = '';
+    tabelaVendaDescricao = '';
     if (!rememberUser) {
       empresaId = null;
       empresaNome = '';

@@ -7,15 +7,20 @@ import 'package:uuid/uuid.dart';
 
 import '../app_state.dart';
 import '../db/local_db.dart';
+import '../documents/pedido_document_actions.dart';
 import '../fv_carteira.dart';
 import '../sync/sync_service.dart';
 import '../ui/brand.dart';
 import '../ui/barcode_scan.dart';
 import '../ui/cliente_credito_check.dart';
 import '../ui/format.dart';
+import '../ui/pedido_envio_dialog.dart';
 import '../ui/pdv_alert_dialog.dart';
+import '../ui/produto_busca.dart';
 import '../ui/produto_list_card.dart';
-import 'pedidos_screen.dart';
+import '../ui/produto_foto_viewer.dart';
+import '../ui/uppercase_input.dart';
+import '../pricing/product_preco.dart';
 import 'pix_qr_screen.dart';
 
 class _ItemPedido {
@@ -69,7 +74,13 @@ class _ItemPedido {
 }
 
 class NovoPedidoScreen extends StatefulWidget {
-  const NovoPedidoScreen({super.key, this.clienteInicial, this.tipoInicial = 'pedido'});
+  const NovoPedidoScreen({
+    super.key,
+    this.clienteInicial,
+    this.tipoInicial = 'pedido',
+    this.documentoUuid,
+    this.converterParaPedido = false,
+  });
 
   /// Cliente pré-selecionado (ex.: ao iniciar o pedido pela tela de Clientes).
   final Map<String, dynamic>? clienteInicial;
@@ -77,6 +88,12 @@ class NovoPedidoScreen extends StatefulWidget {
   /// Tipo do documento: 'pedido' (vai para o Monitor de Vendas e baixa estoque
   /// ao faturar) ou 'orcamento' (vai para Orçamentos recebidos, sem baixa).
   final String tipoInicial;
+
+  /// UUID de orçamento/pedido local (outbox ou cache) para reabrir.
+  final String? documentoUuid;
+
+  /// Se true, abre o documento como pedido (conversão de orçamento).
+  final bool converterParaPedido;
 
   @override
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
@@ -97,6 +114,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   final _descValor = TextEditingController(text: '0,00');
 
   late String _tipo = widget.tipoInicial;
+  String? _orcamentoOrigemUuid;
+  String? _orcamentoOrigemNumero;
 
   // Forma de pagamento e prazo vêm sincronizados do ERP (flag "Disponível Mobile").
   List<Map<String, dynamic>> _formas = [];
@@ -108,11 +127,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Map<String, dynamic>? _listaPreco;
   List<Map<String, dynamic>> _listasPreco = [];
+  int? _vendedorTabelaId;
   List<Map<String, dynamic>> _transportadoras = [];
   int? _transportadoraId;
   bool _salvando = false;
   bool _sincDesconto = false;
   bool _creditoLiberado = false;
+  /// true se o vendedor alterou a lista manualmente (não sobrescrever até trocar cliente).
+  bool _listaPrecoManual = false;
   SyncService? _sync;
 
   @override
@@ -141,6 +163,116 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     await _carregarListasPreco();
     await _carregarFormas();
     await _carregarTransportadoras();
+    if (widget.documentoUuid != null && widget.documentoUuid!.isNotEmpty) {
+      await _carregarDocumento(widget.documentoUuid!);
+    } else if (_cliente != null && mounted) {
+      setState(() {
+        _preselecionarDoCliente();
+        _aplicarListaPrecoPreferida(forcar: true);
+      });
+    }
+  }
+
+  Future<void> _carregarDocumento(String uuid) async {
+    final doc = await _db.orderForPdf(uuid);
+    if (!mounted) return;
+    if (doc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir este orçamento. Sincronize e tente de novo.')),
+      );
+      return;
+    }
+
+    final clienteId = _asInt(doc['cliente_id']);
+    Map<String, dynamic>? cliente;
+    if (clienteId != null) {
+      final rows = await _db.query('SELECT * FROM customers WHERE id = ? LIMIT 1', [clienteId]);
+      if (rows.isNotEmpty) cliente = rows.first;
+    }
+
+    final itens = <_ItemPedido>[];
+    try {
+      final decoded = jsonDecode((doc['itens_json'] ?? '[]').toString());
+      if (decoded is List) {
+        for (final raw in decoded) {
+          if (raw is! Map) continue;
+          final m = Map<String, dynamic>.from(raw);
+          final pid = _asInt(m['product_id']);
+          if (pid == null) continue;
+          itens.add(_ItemPedido(
+            productId: pid,
+            descricao: (m['descricao'] ?? '').toString(),
+            quantidade: (m['quantidade'] as num?)?.toDouble() ?? 1,
+            precoUnitario: (m['preco_unitario'] as num?)?.toDouble() ?? 0,
+            desconto: (m['desconto'] as num?)?.toDouble() ?? 0,
+          ));
+        }
+      }
+    } catch (_) {}
+
+    Map<String, dynamic> extra = {};
+    try {
+      final decoded = jsonDecode((doc['extra_json'] ?? '{}').toString());
+      if (decoded is Map) extra = Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+
+    final converter = widget.converterParaPedido;
+    final tipoDoc = (doc['tipo'] ?? '').toString();
+    if (converter || tipoDoc == 'orcamento') {
+      _orcamentoOrigemUuid = uuid;
+      final numOrc = (doc['numero'] ?? '').toString();
+      _orcamentoOrigemNumero = numOrc.isNotEmpty ? numOrc : null;
+    }
+
+    final frete = (extra['frete'] as num?)?.toDouble() ?? 0;
+    final condicao = (extra['condicao_pagamento'] ?? '').toString();
+    final descPedido = (doc['desconto_valor'] as num?)?.toDouble() ?? 0;
+    final pctExtra = (extra['percentual_desconto'] as num?)?.toDouble();
+    final obs = (doc['observacoes'] ?? '').toString();
+
+    setState(() {
+      _tipo = converter ? 'pedido' : (tipoDoc.isNotEmpty ? tipoDoc : widget.tipoInicial);
+      _cliente = cliente;
+      _itens
+        ..clear()
+        ..addAll(itens);
+      _obs.text = obs;
+      _descValor.text = _fmtInput(descPedido);
+      if (pctExtra != null && pctExtra > 0) {
+        _descPct.text = _fmtInput(pctExtra);
+      } else {
+        final base = _itens.fold(0.0, (s, i) => s + i.total);
+        final pct = base > 0 ? (descPedido / base * 100) : 0.0;
+        _descPct.text = _fmtInput(pct);
+      }
+      _frete.text = _fmtInput(frete);
+      _condicao.text = condicao;
+
+      _transportadoraId = _asInt(extra['transportadora_id']);
+      if (_cliente != null) {
+        _preselecionarDoCliente();
+      }
+
+      // Dados do orçamento prevalecem sobre o padrão do cliente.
+      final formaId = _asInt(extra['forma_pagamento_id']);
+      if (formaId != null && _formaById(formaId) != null) {
+        _aplicarForma(formaId);
+        final tid = _asInt(extra['tabela_prazo_id']);
+        if (tid != null && _tabelaById(tid) != null) {
+          _tabelaPrazoId = tid;
+          _tabelaDias = (extra['tabela_prazo_dias'] ?? _tabelaById(tid)?['dias'])?.toString();
+        }
+      }
+
+      final priceTableId = _asInt(extra['price_table_id']);
+      final lista = _listaPrecoById(priceTableId);
+      if (lista != null) {
+        _listaPreco = lista;
+        _listaPrecoManual = true;
+      } else if (_cliente != null) {
+        _aplicarListaPrecoPreferida(forcar: true);
+      }
+    });
   }
 
   Future<void> _carregarTransportadoras() async {
@@ -184,8 +316,100 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   Future<void> _carregarListasPreco() async {
-    final rows = await _db.query('SELECT * FROM price_tables WHERE ativo = 1 ORDER BY descricao');
-    if (mounted) setState(() => _listasPreco = rows);
+    final rows = await _db.query(
+      'SELECT * FROM price_tables WHERE ativo = 1 '
+      'ORDER BY CAST(codigo AS INTEGER), descricao',
+    );
+    if (!mounted) return;
+
+    final config = context.read<AppState>().config;
+    var vendedorTid = config.tabelaVendaId;
+    if (vendedorTid == null && config.vendedorId != null) {
+      final vs = await _db.query(
+        'SELECT tabela_venda_id FROM vendedores WHERE id = ? LIMIT 1',
+        [config.vendedorId],
+      );
+      if (vs.isNotEmpty) {
+        vendedorTid = _asInt(vs.first['tabela_venda_id']);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _listasPreco = rows;
+      _vendedorTabelaId = vendedorTid;
+      // Ao abrir o pedido: sempre a tabela padrão do vendedor (não a 1ª da lista).
+      _listaPrecoManual = false;
+      _aplicarListaPrecoPreferida(forcar: true);
+    });
+  }
+
+  Map<String, dynamic>? _listaPrecoById(int? id) {
+    if (id == null) return null;
+    for (final r in _listasPreco) {
+      if (r['id'] == id || _asInt(r['id']) == id) return r;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _listaPadraoVendedor() {
+    final config = context.read<AppState>().config;
+    var preferida = _listaPrecoById(_vendedorTabelaId ?? config.tabelaVendaId);
+    if (preferida != null) return preferida;
+
+    if (config.tabelaVendaDescricao.isNotEmpty) {
+      final alvo = config.tabelaVendaDescricao.toUpperCase();
+      for (final r in _listasPreco) {
+        if ((r['descricao'] ?? '').toString().toUpperCase() == alvo) {
+          return r;
+        }
+      }
+    }
+    if (config.tabelaVendaCodigo.isNotEmpty) {
+      final cod = config.tabelaVendaCodigo.trim();
+      for (final r in _listasPreco) {
+        if ((r['codigo'] ?? '').toString().trim() == cod) {
+          return r;
+        }
+      }
+    }
+
+    // Fallback seguro: VAREJO / código 1 — nunca a 1ª alfabética (ATACADO).
+    for (final r in _listasPreco) {
+      final desc = (r['descricao'] ?? '').toString().toUpperCase();
+      final cod = (r['codigo'] ?? '').toString().trim();
+      if (desc.contains('VAREJO') || desc.contains('PADRAO') || desc.contains('PADRÃO') || cod == '1') {
+        return r;
+      }
+    }
+    return _listasPreco.isNotEmpty ? _listasPreco.first : null;
+  }
+
+  /// Sem cliente: tabela do vendedor. Com cliente + price_table_id: tabela do cliente.
+  /// Alteração manual do dropdown é respeitada até trocar o cliente.
+  void _aplicarListaPrecoPreferida({bool forcar = false}) {
+    if (_listasPreco.isEmpty) return;
+
+    final doCliente = _listaPrecoById(_asInt(_cliente?['price_table_id']));
+    if (doCliente != null) {
+      _listaPreco = doCliente;
+      _listaPrecoManual = false;
+      return;
+    }
+
+    if (!forcar && _listaPrecoManual && _listaPreco != null) return;
+
+    _listaPreco = _listaPadraoVendedor();
+    _listaPrecoManual = false;
+  }
+
+  Future<double> _precoDoProduto(Map<String, dynamic> produto, {double quantidade = 1}) {
+    return ProductPreco.resolve(
+      produto,
+      listaPreco: _listaPreco,
+      quantidade: quantidade,
+      db: _db,
+    );
   }
 
   Future<void> _carregarFormas() async {
@@ -309,6 +533,78 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     setState(() {});
   }
 
+  void _alterarDescPedidoPct(double delta) {
+    final nova = (_parseNum(_descPct.text) + delta).clamp(0.0, 100.0).toDouble();
+    _descPct.text = _fmtInput(nova);
+    _recalcDescontoDePct();
+  }
+
+  void _alterarDescPedidoValor(double delta) {
+    final nova = (_parseNum(_descValor.text) + delta).clamp(0.0, _subtotalItens).toDouble();
+    _descValor.text = _fmtInput(nova);
+    _recalcDescontoDeValor();
+  }
+
+  Widget _stepBtnPedido(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Brand.blue.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 34,
+          height: 42,
+          child: Icon(icon, size: 18, color: Brand.blue),
+        ),
+      ),
+    );
+  }
+
+  Widget _campoDescontoStepper({
+    required TextEditingController controller,
+    required String label,
+    required VoidCallback onMinus,
+    required VoidCallback onPlus,
+    required ValueChanged<String> onChanged,
+    String? suffix,
+  }) {
+    return Row(
+      children: [
+        _stepBtnPedido(Icons.remove_rounded, onMinus),
+        const SizedBox(width: 4),
+        Expanded(
+          child: TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+            decoration: InputDecoration(
+              labelText: label,
+              suffixText: suffix,
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Brand.blue, width: 1.4),
+              ),
+            ),
+            onChanged: onChanged,
+          ),
+        ),
+        const SizedBox(width: 4),
+        _stepBtnPedido(Icons.add_rounded, onPlus),
+      ],
+    );
+  }
+
   // ---- Ações -------------------------------------------------------------
   Future<void> _selecionarCliente() async {
     final escolhido = await showModalBottomSheet<Map<String, dynamic>>(
@@ -323,11 +619,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         _cliente = escolhido;
         _creditoLiberado = false;
         _preselecionarDoCliente();
+        _aplicarListaPrecoPreferida(forcar: true);
       });
     }
   }
 
   Future<void> _adicionarItem() async {
+    if (_cliente == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecione o cliente antes de adicionar itens.')),
+      );
+      return;
+    }
     final produto = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -337,7 +640,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
     if (produto == null || !mounted) return;
 
-    final preco = (produto['preco_venda'] as num?)?.toDouble() ?? 0.0;
+    final preco = await _precoDoProduto(produto);
+    if (!mounted) return;
     final item = await showModalBottomSheet<_ItemPedido>(
       context: context,
       isScrollControlled: true,
@@ -347,6 +651,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         descricao: (produto['descricao'] ?? '').toString(),
         precoUnitario: preco,
         productId: produto['id'] as int,
+        produto: produto,
+        listaPreco: _listaPreco,
       ),
     );
     if (item == null) return;
@@ -539,6 +845,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'transportadora_id': _transportadoraId,
       'transportadora_nome': _transportadoraLabel(_transportadoraId),
       if (_creditoLiberado) 'credito_liberado': true,
+      if (_orcamentoOrigemUuid != null) 'orcamento_origem_uuid': _orcamentoOrigemUuid,
+      if (_orcamentoOrigemNumero != null) 'orcamento_origem_numero': _orcamentoOrigemNumero,
       if (pixExtra != null) ...pixExtra,
     };
 
@@ -562,15 +870,67 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (!mounted) return;
     context.read<AppState>().sync.syncNow();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Pedido salvo. Será sincronizado automaticamente.')),
+    setState(() => _salvando = false);
+
+    final tipoLabel = _tipo == 'orcamento' ? 'orçamento' : 'pedido';
+    final clienteNome = (_cliente?['nome_razao'] ?? 'Cliente').toString();
+    final whats = _telefoneWhatsAppCliente(_cliente);
+    final email = (_cliente?['email'] ?? '').toString().trim();
+    final msgPadrao = _tipo == 'orcamento'
+        ? 'Segue orçamento ($clienteNome).'
+        : 'Segue pedido ($clienteNome).';
+
+    final envio = await showPedidoEnvioDialog(
+      context,
+      tipoLabel: tipoLabel,
+      clienteNome: clienteNome,
+      whatsappInicial: whats,
+      emailInicial: email,
+      mensagemInicial: msgPadrao,
     );
 
-    // Após salvar, vai para a lista de pedidos.
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const PedidosScreen()),
+    if (!mounted) return;
+
+    if (envio != null) {
+      if (envio.canal == PedidoEnvioCanal.whatsapp) {
+        await PedidoDocumentActions.enviarWhatsApp(
+          context,
+          uuid,
+          telefone: envio.whatsapp,
+          mensagem: envio.mensagem,
+        );
+      } else {
+        await PedidoDocumentActions.enviarEmail(
+          context,
+          uuid,
+          email: envio.email,
+          mensagem: envio.mensagem,
+        );
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          envio == null
+              ? 'Pedido salvo. Será sincronizado automaticamente.'
+              : 'Pedido salvo e enviado. Será sincronizado automaticamente.',
+        ),
+      ),
     );
+
+    // Após salvar (e eventual envio), volta à tela inicial do app.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  String _telefoneWhatsAppCliente(Map<String, dynamic>? c) {
+    if (c == null) return '';
+    for (final key in ['whatsapp', 'celular1', 'fone1']) {
+      final raw = (c[key] ?? '').toString().trim();
+      if (raw.isNotEmpty) return raw;
+    }
+    return '';
   }
 
   @override
@@ -579,7 +939,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       backgroundColor: Brand.bg,
       appBar: AppBar(
         title: Text(
-          _tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido',
+          _orcamentoOrigemUuid != null && _tipo == 'pedido'
+              ? 'Pedido (do orçamento${_orcamentoOrigemNumero != null ? ' $_orcamentoOrigemNumero' : ''})'
+              : (_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
           style: TextStyle(fontSize: 17 + Brand.textBump01cm, fontWeight: FontWeight.w600, letterSpacing: 0.2),
         ),
         centerTitle: false,
@@ -664,6 +1026,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
       children: [
         _filialCard(empresa.isEmpty ? 'Empresa padrão' : empresa),
+        _section(icon: Icons.person_outline, titulo: 'Cliente', filhos: [
+          _clienteCard(limite: limite),
+        ]),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
           _pedidoNumeroCard(),
           _field('Tipo de Pedido *', _dropdown<String>(
@@ -677,17 +1042,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               for (final l in _listasPreco)
                 (l['id'] as int): '${l['codigo'] ?? ''} - ${l['descricao'] ?? ''}'.trim()
             },
-            hint: 'Padrão',
-            onChanged: (id) => setState(() =>
-                _listaPreco = _listasPreco.cast<Map<String, dynamic>?>().firstWhere(
-                      (l) => l?['id'] == id,
-                      orElse: () => null,
-                    )),
+            hint: 'Tabela do vendedor',
+            onChanged: (id) => setState(() {
+              _listaPreco = _listaPrecoById(id);
+              _listaPrecoManual = true;
+            }),
           )),
           _infoTile(icon: Icons.event_outlined, label: 'Data de Emissão', value: _dataHoraAgora()),
-        ]),
-        _section(icon: Icons.person_outline, titulo: 'Cliente', filhos: [
-          _clienteCard(limite: limite),
         ]),
         _section(icon: Icons.local_shipping_outlined, titulo: 'Entrega', filhos: [
           _enderecoCard(),
@@ -887,17 +1248,24 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           Row(
             children: [
               Expanded(
-                child: _campoTexto(_descPct,
-                    label: 'Desconto (%)',
-                    teclado: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => _recalcDescontoDePct()),
+                child: _campoDescontoStepper(
+                  controller: _descPct,
+                  label: 'Desc. %',
+                  suffix: '%',
+                  onMinus: () => _alterarDescPedidoPct(-1),
+                  onPlus: () => _alterarDescPedidoPct(1),
+                  onChanged: (_) => _recalcDescontoDePct(),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _campoTexto(_descValor,
-                    label: 'Desconto (R\$)',
-                    teclado: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => _recalcDescontoDeValor()),
+                child: _campoDescontoStepper(
+                  controller: _descValor,
+                  label: 'Desc. R\$',
+                  onMinus: () => _alterarDescPedidoValor(-1),
+                  onPlus: () => _alterarDescPedidoValor(1),
+                  onChanged: (_) => _recalcDescontoDeValor(),
+                ),
               ),
             ],
           ),
@@ -1556,12 +1924,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     TextInputType? teclado,
     ValueChanged<String>? onChanged,
     bool enabled = true,
+    bool caixaAlta = true,
   }) {
+    final isNumeric = teclado == TextInputType.number ||
+        teclado == const TextInputType.numberWithOptions(decimal: true) ||
+        teclado == const TextInputType.numberWithOptions(decimal: true, signed: true);
     return TextField(
       controller: c,
       keyboardType: teclado,
       onChanged: onChanged,
       enabled: enabled,
+      textCapitalization: caixaAlta && !isNumeric ? TextCapitalization.characters : TextCapitalization.none,
+      inputFormatters: caixaAlta && !isNumeric ? withUpperCase() : null,
       style: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         labelText: label,
@@ -1720,6 +2094,8 @@ class _ItemFormSheet extends StatefulWidget {
     this.descontoPctInicial = 0,
     this.descontoValorInicial = 0,
     this.confirmLabel = 'Incluir item',
+    this.produto,
+    this.listaPreco,
   });
 
   final int productId;
@@ -1729,6 +2105,8 @@ class _ItemFormSheet extends StatefulWidget {
   final double descontoPctInicial;
   final double descontoValorInicial;
   final String confirmLabel;
+  final Map<String, dynamic>? produto;
+  final Map<String, dynamic>? listaPreco;
 
   @override
   State<_ItemFormSheet> createState() => _ItemFormSheetState();
@@ -1738,6 +2116,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   late final TextEditingController _qtd;
   late final TextEditingController _descPct;
   late final TextEditingController _descValor;
+  late double _precoUnitario;
   bool _sincDesc = false;
 
   String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
@@ -1748,6 +2127,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   @override
   void initState() {
     super.initState();
+    _precoUnitario = widget.precoUnitario;
     _qtd = TextEditingController(text: _fmtQtd(widget.quantidadeInicial));
     _descPct = TextEditingController(text: _fmtNum(widget.descontoPctInicial));
     _descValor = TextEditingController(text: _fmtNum(widget.descontoValorInicial));
@@ -1766,7 +2146,22 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
   double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0).toDouble();
 
-  double get _bruto => _quantidade * widget.precoUnitario;
+  double get _bruto => _quantidade * _precoUnitario;
+
+  Future<void> _atualizarPrecoPorQtd() async {
+    final produto = widget.produto;
+    if (produto == null) return;
+    final novo = await ProductPreco.resolve(
+      produto,
+      listaPreco: widget.listaPreco,
+      quantidade: _quantidade,
+    );
+    if (!mounted) return;
+    if ((novo - _precoUnitario).abs() > 0.0001) {
+      setState(() => _precoUnitario = novo);
+      _syncFromPct();
+    }
+  }
 
   double get _desconto {
     final pct = _parseNum(_descPct.text);
@@ -1798,6 +2193,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     _qtd.text = _fmtQtd(nova);
     _syncFromPct();
     setState(() {});
+    _atualizarPrecoPorQtd();
   }
 
   void _alterarDescPct(double delta) {
@@ -1839,7 +2235,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       productId: widget.productId,
       descricao: widget.descricao,
       quantidade: qtd,
-      precoUnitario: widget.precoUnitario,
+      precoUnitario: _precoUnitario,
       descontoPercentual: pct > 0 ? pct : null,
       desconto: pct > 0 ? 0 : _parseNum(_descValor.text),
     );
@@ -1890,7 +2286,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Preço unitário (bloqueado)', style: TextStyle(color: Colors.black54)),
-                      Text(brMoney(widget.precoUnitario),
+                      Text(brMoney(_precoUnitario),
                           style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
                     ],
                   ),
@@ -1912,6 +2308,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                         onChanged: (_) {
                           _syncFromPct();
                           setState(() {});
+                          _atualizarPrecoPorQtd();
                         },
                       ),
                     ),
@@ -2097,18 +2494,15 @@ class _BuscaSheetState extends State<_BuscaSheet> {
   }
 
   Future<void> _buscar() async {
-    final like = '%$_termo%';
     List<Map<String, dynamic>> rows;
     if (_isProdutos) {
-      final where = StringBuffer(
-          'ativo = 1 AND mostrar_no_app = 1 AND (descricao LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ?)');
-      final args = <Object?>[like, like, like];
-      if (_grupoSel != null) {
-        where.write(' AND grupo = ?');
-        args.add(_grupoSel);
-      }
-      rows = await _db.query('SELECT * FROM products WHERE $where ORDER BY descricao LIMIT 100', args);
+      final f = ProdutoBusca.filtro(_termo, grupo: _grupoSel);
+      rows = await _db.query(
+        'SELECT * FROM products WHERE ${f.whereExtra} ORDER BY ${f.orderBy} LIMIT 100',
+        f.args,
+      );
     } else {
+      final like = '%${_termo.trim().toUpperCase()}%';
       final vendedorId = context.read<AppState>().config.vendedorId;
       if (widget.tabela == 'customers') {
         rows = await _db.query(
@@ -2204,6 +2598,8 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                     controller: _buscaCtrl,
                     autofocus: false,
                     textInputAction: TextInputAction.search,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: withUpperCase(),
                     decoration: InputDecoration(
                       hintText: 'Buscar...',
                       prefixIcon: const Icon(Icons.search),
@@ -2297,10 +2693,19 @@ class _BuscaSheetState extends State<_BuscaSheet> {
 
   Widget _produtoItem(Map<String, dynamic> r) {
     final base = context.read<AppState>().config.baseUrl;
+    final fotoUrl = produtoFotoUrl(base, r['foto_url']);
+    final productId = (r['id'] as num?)?.toInt();
+    final descricao = (r['descricao'] ?? '').toString();
     return ProdutoListCard(
       produto: r,
       baseUrl: base,
       onTap: () => Navigator.pop(context, r),
+      onFotoTap: () => abrirProdutoFoto(
+        context,
+        productId: productId,
+        url: fotoUrl,
+        titulo: descricao,
+      ),
     );
   }
 }

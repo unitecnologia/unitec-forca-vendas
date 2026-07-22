@@ -39,8 +39,10 @@ class Brand {
   static const Color estoqueDisponivel = Color(0xFF16A34A);
   static const Color produtoCodigo = Color(0xFF475569);
 
-  /// Preços no detalhe do produto.
-  static const Color precoVista = Color(0xFF16A34A);
+  /// Preços no detalhe do produto (3 níveis).
+  static const Color precoVarejo = Color(0xFF16A34A);
+  static const Color precoVista = precoVarejo; // legado
   static const Color precoPrazo = Color(0xFF1565C0);
   static const Color precoAtacado = Color(0xFFEA580C);
+  static const Color precoEspecial = Color(0xFF7C3AED);
 }

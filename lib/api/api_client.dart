@@ -272,6 +272,41 @@ class ApiClient {
     return (data['data'] as Map<String, dynamic>? ?? {});
   }
 
+  /// Estoque do produto por filial/depósito (consulta online).
+  Future<Map<String, dynamic>> estoqueFiliais(int productId) async {
+    final r = await _http
+        .get(_uri('produtos/$productId/estoque-filiais'), headers: _headers(auth: true))
+        .timeout(const Duration(seconds: 20));
+    return _decode(r);
+  }
+
+  /// Dashboard online (meta, vendas do dia/mês, títulos).
+  Future<Map<String, dynamic>> dashboard() async {
+    final r = await _http
+        .get(_uri('dashboard'), headers: _headers(auth: true))
+        .timeout(const Duration(seconds: 20));
+    return _decode(r);
+  }
+
+  /// Relatório de comissões online (alíquotas do colaborador × vendas no período).
+  Future<Map<String, dynamic>> comissao({required String de, required String ate}) async {
+    final r = await _http
+        .get(
+          _uri('comissao', {'de': de, 'ate': ate}),
+          headers: _headers(auth: true),
+        )
+        .timeout(const Duration(seconds: 25));
+    return _decode(r);
+  }
+
+  /// Detalhe de orçamento no ERP (itens) para abrir/converter no app.
+  Future<Map<String, dynamic>> orcamentoDetalhe(int id) async {
+    final r = await _http
+        .get(_uri('orcamentos/$id'), headers: _headers(auth: true))
+        .timeout(const Duration(seconds: 20));
+    return _decode(r);
+  }
+
   Map<String, dynamic> _decode(http.Response r) {
     if (r.statusCode >= 200 && r.statusCode < 300) {
       if (r.body.isEmpty) return {};

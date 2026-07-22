@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../config.dart';
 import '../db/local_db.dart';
 import '../log/app_log.dart';
+import '../media/produto_foto_cache.dart';
 
 enum SyncStatus { idle, syncing, ok, offline, error }
 
@@ -85,6 +86,8 @@ class SyncService extends ChangeNotifier {
       if (prev != SyncStatus.ok) {
         AppLog.instance.ok('sync', 'Sincronizado (pendentes: $pendingCount)');
       }
+      // Completa cache local das fotos (funciona offline depois).
+      unawaited(_cacheProdutoFotos());
     } on TimeoutException {
       status = SyncStatus.offline;
       lastError = 'Tempo esgotado — tente novamente';
@@ -126,6 +129,7 @@ class SyncService extends ChangeNotifier {
           'preco_venda': _d(r['preco_venda']),
           'preco_venda_prazo': _d(r['preco_venda_prazo']),
           'preco_atacado': _d(r['preco_atacado']),
+          'preco_especial': _d(r['preco_especial']),
           'qtd_atacado': _d(r['qtd_atacado']),
           'estoque': _d(r['estoque']),
           'estoque_reservado': _d(r['estoque_reservado']),
@@ -160,6 +164,7 @@ class SyncService extends ChangeNotifier {
           'forma_pagamento_id': r['forma_pagamento_id'],
           'tabela_prazo_id': r['tabela_prazo_id'],
           'tabela_prazo_dias': r['tabela_prazo_dias'],
+          'price_table_id': r['price_table_id'],
           'vendedor_fv_id': r['vendedor_fv_id'],
           'vendedor_loja_id': r['vendedor_loja_id'],
           'ativo': _b(r['ativo']),
@@ -212,7 +217,11 @@ class SyncService extends ChangeNotifier {
           'valor': _d(r['valor']), 'fator': _d(r['fator']), 'updated_at': r['updated_at'],
         });
     await _db.upsertAll('vendedores', data['vendedores'] ?? [], (r) => {
-          'id': r['id'], 'codigo': r['codigo'], 'nome': r['nome'], 'ativo': _b(r['ativo']),
+          'id': r['id'],
+          'codigo': r['codigo'],
+          'nome': r['nome'],
+          'ativo': _b(r['ativo']),
+          'tabela_venda_id': r['tabela_venda_id'],
         });
     if (fullPull) {
       await _db.deleteAll('financeiro');
@@ -236,6 +245,17 @@ class SyncService extends ChangeNotifier {
           'id': r['id'], 'numero': r['numero'], 'data': r['data'], 'cliente_id': r['cliente_id'],
           'total': _d(r['total']), 'status': r['status'],
         });
+    // Orçamentos do ERP com itens → cache local (abre / transforma em pedido).
+    for (final row in (data['historico_orcamentos'] as List?) ?? const []) {
+      final m = Map<String, dynamic>.from(row as Map);
+      if ((m['uuid'] ?? '').toString().isEmpty) {
+        final id = m['id'];
+        if (id != null) m['uuid'] = 'erp-orc-$id';
+      }
+      m['tipo'] = 'orcamento';
+      m['situacao'] = m['situacao'] ?? m['status'];
+      await _db.upsertPedidoFvCache(_mapPedidoFvCacheRow(m));
+    }
 
     for (final row in (data['pedidos_fv'] as List?) ?? const []) {
       final m = Map<String, dynamic>.from(row as Map);
@@ -245,6 +265,22 @@ class SyncService extends ChangeNotifier {
 
     if (data['_etag'] != null) {
       await _db.setMeta('pull_etag', data['_etag'] as String);
+    }
+  }
+
+  Future<void> _cacheProdutoFotos() async {
+    if (config.baseUrl.isEmpty) return;
+    try {
+      final rows = await _db.query(
+        "SELECT id, foto_url FROM products WHERE IFNULL(foto_url, '') != ''",
+      );
+      if (rows.isEmpty) return;
+      await ProdutoFotoCache.instance.syncAfterPull(
+        baseUrl: config.baseUrl,
+        products: rows,
+      );
+    } catch (e) {
+      AppLog.instance.warn('sync', 'Cache de fotos: $e');
     }
   }
 
@@ -332,8 +368,10 @@ class SyncService extends ChangeNotifier {
     for (final res in results) {
       final m = Map<String, dynamic>.from(res as Map);
       final uuid = m['uuid']?.toString();
-      if (uuid == null) continue;
-      if (m['status'] == 'importado') {
+      if (uuid == null || uuid.isEmpty) continue;
+      final st = (m['status'] ?? '').toString();
+      // ERP confirma com "importado"; "duplicado" também significa que já está no servidor.
+      if (st == 'importado' || m['duplicado'] == true) {
         await _db.markOrder(
           uuid,
           'enviado',
@@ -341,7 +379,7 @@ class SyncService extends ChangeNotifier {
           numeroPedido: m['numero_pedido']?.toString(),
         );
         enviados++;
-      } else if (m['status'] == 'erro') {
+      } else if (st == 'erro') {
         await _db.markOrder(uuid, 'erro', erro: m['erro']?.toString());
         comErro++;
       }
@@ -420,7 +458,7 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  static Map<String, dynamic> _mapPedidoFvCacheRow(Map<String, dynamic> row) {
+  static Map<String, dynamic> mapPedidoFvCacheRow(Map<String, dynamic> row) {
     final situacao = (row['situacao'] ?? '').toString();
     var status = (row['status'] ?? '').toString();
     if (situacao == 'faturado') {
@@ -434,6 +472,7 @@ class SyncService extends ChangeNotifier {
     final extra = <String, dynamic>{
       if (row['forma_pagamento'] != null) 'forma_pagamento': row['forma_pagamento'],
       if (row['condicao_pagamento'] != null) 'condicao_pagamento': row['condicao_pagamento'],
+      if (row['percentual_desconto'] != null) 'percentual_desconto': row['percentual_desconto'],
     };
 
     return {
@@ -452,6 +491,10 @@ class SyncService extends ChangeNotifier {
       'situacao': situacao,
     };
   }
+
+  // Compatível com chamadas internas antigas.
+  static Map<String, dynamic> _mapPedidoFvCacheRow(Map<String, dynamic> row) =>
+      mapPedidoFvCacheRow(row);
 
   static List<dynamic> _parseItens(String json) {
     try {

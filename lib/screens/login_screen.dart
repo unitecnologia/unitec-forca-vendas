@@ -244,8 +244,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final teclado = MediaQuery.viewInsetsOf(context).bottom;
+    final tecladoAberto = teclado > 0;
+
     return Scaffold(
       backgroundColor: Brand.bg,
+      resizeToAvoidBottomInset: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -260,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
               : Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
                       child: Row(
                         children: [
                           const SizedBox(width: 4),
@@ -283,47 +287,50 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     Expanded(
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         child: Column(
                           children: [
-                            Container(
-                              width: 76,
-                              height: 76,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: const LinearGradient(
-                                  colors: [Brand.blue, Brand.green],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Brand.blue.withValues(alpha: 0.35),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
+                            if (!tecladoAberto) ...[
+                              Container(
+                                width: 76,
+                                height: 76,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  gradient: const LinearGradient(
+                                    colors: [Brand.blue, Brand.green],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
-                                ],
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Brand.blue.withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 40),
                               ),
-                              child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 40),
-                            ),
-                            const SizedBox(height: 14),
-                            const Text(
-                              'Força de Vendas',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF1A237E),
+                              const SizedBox(height: 14),
+                              const Text(
+                                'Força de Vendas',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF1A237E),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Selecione empresa e usuário para continuar',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 13),
-                            ),
-                            const SizedBox(height: 24),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Selecione empresa e usuário para continuar',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 13),
+                              ),
+                              const SizedBox(height: 20),
+                            ],
                             Container(
-                              padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+                              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(22),
                                 gradient: LinearGradient(
@@ -362,7 +369,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       _carregarUsuarios();
                                     },
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 14),
                                   DropdownButtonFormField<int>(
                                     value: _userId,
                                     decoration: _fieldDecoration(
@@ -388,10 +395,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                         .toList(),
                                     onChanged: _carregandoUsuarios ? null : (v) => setState(() => _userId = v),
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 14),
                                   TextField(
                                     controller: _senha,
                                     obscureText: true,
+                                    textInputAction: TextInputAction.done,
                                     decoration: _fieldDecoration(
                                       'Senha do app',
                                       suffixIcon: (_usarDigital && _temSenhaSalva && _biometriaDisponivel)
@@ -404,10 +412,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     onSubmitted: (_) => _entrar(),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 4),
                                   CheckboxListTile(
                                     contentPadding: EdgeInsets.zero,
                                     dense: true,
+                                    visualDensity: VisualDensity.compact,
                                     controlAffinity: ListTileControlAffinity.leading,
                                     value: _salvarUsuario,
                                     title: const Text('Salvar usuário', style: TextStyle(fontSize: 14)),
@@ -426,6 +435,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     CheckboxListTile(
                                       contentPadding: EdgeInsets.zero,
                                       dense: true,
+                                      visualDensity: VisualDensity.compact,
                                       controlAffinity: ListTileControlAffinity.leading,
                                       value: _usarDigital && _salvarUsuario,
                                       title: const Text('Usar digital do aparelho', style: TextStyle(fontSize: 14)),
@@ -437,60 +447,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                           ? null
                                           : (v) => setState(() => _usarDigital = v ?? false),
                                     ),
-                                  const SizedBox(height: 12),
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      gradient: const LinearGradient(
-                                        colors: [Brand.blue, Color(0xFF1976D2)],
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Brand.blue.withValues(alpha: 0.35),
-                                          blurRadius: 12,
-                                          offset: const Offset(0, 5),
-                                        ),
-                                      ],
-                                    ),
-                                    child: FilledButton(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: Colors.transparent,
-                                        shadowColor: Colors.transparent,
-                                        minimumSize: const Size.fromHeight(48),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                      ),
-                                      onPressed: _entrando ? null : _entrar,
-                                      child: _entrando
-                                          ? const SizedBox(
-                                              height: 22,
-                                              width: 22,
-                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                            )
-                                          : const Text(
-                                              'Entrar',
-                                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                                            ),
-                                    ),
-                                  ),
-                                  if (_salvarUsuario &&
-                                      _usarDigital &&
-                                      _temSenhaSalva &&
-                                      _biometriaDisponivel) ...[
-                                    const SizedBox(height: 12),
-                                    OutlinedButton.icon(
-                                      onPressed: _entrando ? null : _entrarComDigital,
-                                      icon: const Icon(Icons.fingerprint),
-                                      label: const Text('Entrar com digital'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: Brand.blue,
-                                        minimumSize: const Size.fromHeight(46),
-                                        side: BorderSide(color: Brand.blue.withValues(alpha: 0.45)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                      ),
-                                    ),
-                                  ],
                                   if (_erro != null) ...[
-                                    const SizedBox(height: 16),
+                                    const SizedBox(height: 8),
                                     Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
@@ -511,11 +469,75 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        '$kAppName • $kAppVersionLabel',
-                        style: TextStyle(color: Colors.black.withValues(alpha: 0.38), fontSize: 12),
+                    // Botão fixo acima do teclado — não some ao digitar a senha.
+                    Material(
+                      color: Colors.transparent,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(20, 4, 20, tecladoAberto ? 8 : 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                gradient: const LinearGradient(
+                                  colors: [Brand.blue, Color(0xFF1976D2)],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Brand.blue.withValues(alpha: 0.35),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  minimumSize: const Size.fromHeight(48),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                                onPressed: _entrando ? null : _entrar,
+                                child: _entrando
+                                    ? const SizedBox(
+                                        height: 22,
+                                        width: 22,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Text(
+                                        'Entrar',
+                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                      ),
+                              ),
+                            ),
+                            if (_salvarUsuario &&
+                                _usarDigital &&
+                                _temSenhaSalva &&
+                                _biometriaDisponivel) ...[
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: _entrando ? null : _entrarComDigital,
+                                icon: const Icon(Icons.fingerprint),
+                                label: const Text('Entrar com digital'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Brand.blue,
+                                  minimumSize: const Size.fromHeight(44),
+                                  side: BorderSide(color: Brand.blue.withValues(alpha: 0.45)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                              ),
+                            ],
+                            if (!tecladoAberto) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                '$kAppName • $kAppVersionLabel',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.black.withValues(alpha: 0.38), fontSize: 12),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ],

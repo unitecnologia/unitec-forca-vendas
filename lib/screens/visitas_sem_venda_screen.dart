@@ -8,6 +8,7 @@ import '../db/local_db.dart';
 import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import '../ui/uppercase_input.dart';
 
 /// Registra visita ao cliente sem venda (motivo mínimo 10 caracteres).
 class VisitasSemVendaScreen extends StatefulWidget {
@@ -199,7 +200,8 @@ class _VisitasSemVendaScreenState extends State<VisitasSemVendaScreen> {
                           controller: _motivo,
                           minLines: 3,
                           maxLines: 5,
-                          textCapitalization: TextCapitalization.sentences,
+                          textCapitalization: TextCapitalization.characters,
+                          inputFormatters: withUpperCase(),
                           decoration: const InputDecoration(
                             labelText: 'Motivo (mínimo 10 caracteres) *',
                             hintText: 'Ex.: Cliente sem verba, estoque cheio, fechado...',
@@ -389,6 +391,8 @@ class _ClienteBuscaSheetState extends State<_ClienteBuscaSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                inputFormatters: withUpperCase(),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search_rounded),
                   hintText: 'Nome, código ou CPF/CNPJ',
