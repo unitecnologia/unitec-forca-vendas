@@ -14,6 +14,12 @@ String brMoney(num? value) {
   return '${neg ? '-' : ''}R\$ ${buf.toString()},$dec';
 }
 
+/// Valor monetário sem o prefixo `R$` (ex.: `1.234,56`).
+String brMoneyShort(num? value) {
+  final full = brMoney(value);
+  return full.startsWith('R\$ ') ? full.substring(3) : full.replaceFirst('R\$', '').trim();
+}
+
 /// Converte 'YYYY-MM-DD' (ou ISO) para 'dd/MM/yyyy'. Retorna '—' se vazio.
 String brDate(String? iso) {
   if (iso == null || iso.isEmpty) return '—';

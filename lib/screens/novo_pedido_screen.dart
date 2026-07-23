@@ -523,15 +523,23 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Aplica a forma/prazo pré-fixados no cadastro do cliente. Retorna true
   /// quando conseguiu pré-selecionar a forma.
   bool _preselecionarDoCliente() {
-    final fid = _cliente?['forma_pagamento_id'] as int?;
-    if (fid == null || _formaById(fid) == null) return false;
-    _aplicarForma(fid);
-    final tid = _cliente?['tabela_prazo_id'] as int?;
-    if (tid != null && _tabelaById(tid) != null) {
-      _tabelaPrazoId = tid;
-      _tabelaDias = (_cliente?['tabela_prazo_dias'] ?? _tabelaById(tid)?['dias'])?.toString();
+    final fid = _asInt(_cliente?['forma_pagamento_id']);
+    final tid = _asInt(_cliente?['tabela_prazo_id']);
+    var ok = false;
+    if (fid != null && _formaById(fid) != null) {
+      _aplicarForma(fid);
+      ok = true;
     }
-    return true;
+    if (tid != null) {
+      // Garante a tabela do cadastro mesmo se a forma ainda não carregou as opções.
+      if (_tabelaById(tid) != null || (_cliente?['tabela_prazo_dias'] ?? '').toString().trim().isNotEmpty) {
+        _tabelaPrazoId = tid;
+        _tabelaDias = (_cliente?['tabela_prazo_dias'] ?? _tabelaById(tid)?['dias'])?.toString();
+        _condicao.clear();
+        ok = true;
+      }
+    }
+    return ok;
   }
 
   // ---- Cálculos ----------------------------------------------------------
@@ -670,7 +678,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _BuscaSheet(tabela: 'products', titulo: 'Selecionar produto', campoNome: 'descricao'),
+      builder: (_) => _BuscaSheet(
+        tabela: 'products',
+        titulo: 'Selecionar produto',
+        campoNome: 'descricao',
+        listaPreco: _listaPreco,
+      ),
     );
     if (produto == null || !mounted) return;
 
@@ -745,14 +758,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   bool _isFormaPix() => _formaTipo() == 'pix';
 
   /// Cliente já tem forma de pagamento amarrada no cadastro.
-  bool get _clienteComFormaDefinida => _cliente?['forma_pagamento_id'] != null;
+  bool get _clienteComFormaDefinida => _asInt(_cliente?['forma_pagamento_id']) != null;
+
+  /// Cliente já tem tabela de prazo amarrada no cadastro (engessado).
+  bool get _clienteComTabelaDefinida => _asInt(_cliente?['tabela_prazo_id']) != null;
 
   /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix).
   bool get _avulsoOculto => _formaTipo() == 'dinheiro' || _formaTipo() == 'pix';
 
-  /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma definida
-  /// ou quando o Prazo/Parcelamento está selecionado.
-  bool get _avulsoBloqueado => _clienteComFormaDefinida || _tabelaPrazoId != null;
+  /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma/tabela
+  /// no cadastro ou quando o Prazo/Parcelamento está selecionado.
+  bool get _avulsoBloqueado =>
+      _clienteComFormaDefinida || _clienteComTabelaDefinida || _tabelaPrazoId != null;
 
   /// Regra 3: havendo Prazo Avulso preenchido, o Prazo/Parcelamento some.
   bool get _avulsoPreenchido => _condicao.text.trim().isNotEmpty;
@@ -1105,13 +1122,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               for (final f in _formas)
                 (f['id'] as int): '${f['codigo'] ?? ''} - ${f['descricao'] ?? ''}'.trim()
             },
-            hint: _formas.isEmpty ? 'Sincronize para carregar' : 'Selecione',
+            hint: _formas.isEmpty
+                ? 'Sincronize para carregar'
+                : (_clienteComFormaDefinida ? 'Definido no cadastro do cliente' : 'Selecione'),
+            enabled: !_clienteComFormaDefinida,
             onChanged: (id) => setState(() => _aplicarForma(id)),
           )),
           if (!_avulsoOculto)
             _field('Prazo Avulso',
                 _campoTexto(_condicao,
-                    hint: _clienteComFormaDefinida
+                    hint: _clienteComFormaDefinida || _clienteComTabelaDefinida
                         ? 'Definido no cadastro do cliente'
                         : (_tabelaPrazoId != null
                             ? 'Use o prazo/parcelamento'
@@ -1123,13 +1143,21 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                             _tabelaDias = null;
                           }
                         }))),
-          if (_tabelas.isNotEmpty && !_avulsoPreenchido)
+          if (!_avulsoPreenchido && (_tabelas.isNotEmpty || _clienteComTabelaDefinida))
             _field('Prazo / Parcelamento', _dropdown<int?>(
               value: _tabelaPrazoId,
               items: {
-                for (final t in _tabelas) (t['id'] as int): '${t['dias'] ?? ''} dias'.trim()
+                for (final t in _tabelas) (t['id'] as int): '${t['dias'] ?? ''} dias'.trim(),
+                // Garante a tabela engessada do cliente mesmo se não vier na forma.
+                if (_clienteComTabelaDefinida &&
+                    _tabelaPrazoId != null &&
+                    !_tabelas.any((t) => (t['id'] as int?) == _tabelaPrazoId))
+                  _tabelaPrazoId!: '${_tabelaDias ?? '—'} dias'.trim(),
               },
-              hint: 'À vista',
+              hint: _clienteComTabelaDefinida
+                  ? 'Definido no cadastro do cliente'
+                  : 'À vista',
+              enabled: !_clienteComTabelaDefinida,
               onChanged: (id) => setState(() {
                 _tabelaPrazoId = id;
                 _tabelaDias = _tabelaById(id)?['dias']?.toString();
@@ -1949,6 +1977,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     required Map<T, String> items,
     required ValueChanged<T?> onChanged,
     String? hint,
+    bool enabled = true,
   }) {
     final values = items.keys.toList();
     final safeValue = values.contains(value) ? value : null;
@@ -1957,7 +1986,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       padding: const EdgeInsets.symmetric(horizontal: 12),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: enabled ? Colors.white : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFCBD5E1)),
       ),
@@ -1966,11 +1995,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           value: safeValue,
           isExpanded: true,
           isDense: true,
-          icon: const Icon(Icons.arrow_drop_down, size: 22),
+          icon: Icon(
+            Icons.arrow_drop_down,
+            size: 22,
+            color: enabled ? null : const Color(0xFF94A3B8),
+          ),
           style: TextStyle(
             fontSize: 14 + Brand.textBump01cm,
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF1E293B),
+            color: enabled ? const Color(0xFF1E293B) : const Color(0xFF64748B),
           ),
           hint: Text(hint ?? 'Selecione',
               style: TextStyle(fontSize: 14 + Brand.textBump01cm, color: Colors.black.withValues(alpha: 0.45))),
@@ -1981,7 +2014,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 child: Text(entry.value, overflow: TextOverflow.ellipsis),
               ),
           ],
-          onChanged: onChanged,
+          onChanged: enabled ? onChanged : null,
         ),
       ),
     );
@@ -2474,11 +2507,17 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
 /// Sheet de busca genérica em uma tabela local (clientes/produtos).
 class _BuscaSheet extends StatefulWidget {
-  const _BuscaSheet({required this.tabela, required this.titulo, required this.campoNome});
+  const _BuscaSheet({
+    required this.tabela,
+    required this.titulo,
+    required this.campoNome,
+    this.listaPreco,
+  });
 
   final String tabela;
   final String titulo;
   final String campoNome;
+  final Map<String, dynamic>? listaPreco;
 
   @override
   State<_BuscaSheet> createState() => _BuscaSheetState();
@@ -2840,6 +2879,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
     return ProdutoListCard(
       produto: r,
       baseUrl: base,
+      listaPreco: widget.listaPreco,
       onTap: () => Navigator.pop(context, r),
       onFotoTap: () => abrirProdutoFoto(
         context,
