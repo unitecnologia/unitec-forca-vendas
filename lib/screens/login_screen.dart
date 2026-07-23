@@ -135,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _empresas = cached;
           _empresaId = _empresaPreferida(cached);
           _modoOffline = true;
-          _erro = 'Servidor offline â€” usando dados salvos no aparelho.';
+          _erro = null;
           _loading = false;
         });
         if (_empresaId != null) {
@@ -188,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ? lastUser
               : (cached.isNotEmpty ? _asInt(cached.first['id']) : null);
           _modoOffline = true;
-          _erro = voltouEspera ? null : 'Servidor offline â€” usuÃ¡rios do cache.';
+          _erro = null;
           _carregandoUsuarios = false;
         });
         return;
@@ -317,6 +317,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           const Spacer(),
+                          _statusConexaoChip(offline: _modoOffline),
                           IconButton(
                             tooltip: 'Trocar servidor',
                             icon: const Icon(Icons.lan_outlined, color: Brand.blue),
@@ -442,13 +443,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     },
                                     onSubmitted: (_) => _entrar(),
                                   ),
-                                  if (_modoOffline) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Modo offline: marque “Salvar usuário” no próximo login online para liberar vendas sem servidor.',
-                                      style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-                                    ),
-                                  ],
                                   const SizedBox(height: 4),
                                   CheckboxListTile(
                                     contentPadding: EdgeInsets.zero,
@@ -549,6 +543,39 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
         ),
+      ),
+    );
+  }
+
+  Widget _statusConexaoChip({required bool offline}) {
+    final cor = offline ? const Color(0xFFDC2626) : const Color(0xFF16A34A);
+    final label = offline ? 'Offline' : 'Online';
+    return Container(
+      margin: const EdgeInsets.only(right: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: cor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: cor.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: cor,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -309,6 +309,23 @@ class AppState extends ChangeNotifier {
           : int.tryParse('${user['tabela_venda_id'] ?? ''}');
       config.tabelaVendaCodigo = (user['tabela_venda_codigo'] ?? '').toString();
       config.tabelaVendaDescricao = (user['tabela_venda_descricao'] ?? '').toString();
+
+      // Garante vendedor no cache de usuários para restaurar no login offline.
+      try {
+        final cached = usuariosEmCache(empresaId).map((e) {
+          if (e is! Map) return e;
+          final m = Map<String, dynamic>.from(e);
+          if (_asInt(m['id']) == config.userId) {
+            m['vendedor_id'] = config.vendedorId;
+            m['vendedor_nome'] = config.vendedorNome;
+            m['name'] = config.userName;
+          }
+          return m;
+        }).toList();
+        if (cached.isNotEmpty) {
+          await cacheUsuarios(empresaId, cached);
+        }
+      } catch (_) {}
     }
     config.rememberUser = rememberUser;
     config.biometricEnabled = rememberUser && biometricEnabled;
@@ -346,16 +363,40 @@ class AppState extends ChangeNotifier {
       config.empresaNome = empresaNome;
     }
     config.userId = userId;
+    // Restaura nome/vendedor do cache de usuários se a sessão limpa perdeu o vínculo.
+    if (config.userName.isEmpty || config.vendedorId == null) {
+      for (final raw in usuariosEmCache(empresaId)) {
+        if (raw is! Map) continue;
+        final u = Map<String, dynamic>.from(raw);
+        if (_asInt(u['id']) != userId) continue;
+        if (config.userName.isEmpty) {
+          config.userName = (u['name'] ?? '').toString();
+        }
+        final vid = _asInt(u['vendedor_id']);
+        if (config.vendedorId == null && vid != null) {
+          config.vendedorId = vid;
+          config.vendedorNome = (u['vendedor_nome'] ?? '').toString();
+        }
+        break;
+      }
+    }
     config.rememberUser = rememberUser;
     config.biometricEnabled = rememberUser && biometricEnabled;
     await config.save();
     AppLog.instance.warn(
       'login',
-      'Entrou OFFLINE como ${config.userName.isEmpty ? userId : config.userName}',
+      'Entrou OFFLINE como ${config.userName.isEmpty ? userId : config.userName}'
+      '${config.vendedorId != null ? ' (vendedor ${config.vendedorId})' : ' (sem vendedor)'}',
     );
     sync.start();
     notifyListeners();
     return true;
+  }
+
+  int? _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('$v');
   }
 
   Future<void> logout() async {

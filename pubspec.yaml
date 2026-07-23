@@ -1,7 +1,7 @@
 name: unitec_forca_vendas
 description: Aplicativo de força de vendas do Unitec ERP (offline-first, sincroniza com o ERP local).
 publish_to: "none"
-version: 1.4.5+24
+version: 1.4.6+25
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

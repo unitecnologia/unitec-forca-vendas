@@ -149,17 +149,17 @@ class AppConfig {
   }
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
-  /// Com [rememberUser], empresa e usuário ficam para o próximo login.
+  /// Com [rememberUser], empresa, usuário e vínculo do vendedor ficam para login offline.
   void clearSession() {
     token = '';
-    vendedorId = null;
-    vendedorNome = '';
-    caixaNome = '';
-    estoqueNome = '';
-    tabelaVendaId = null;
-    tabelaVendaCodigo = '';
-    tabelaVendaDescricao = '';
     if (!rememberUser) {
+      vendedorId = null;
+      vendedorNome = '';
+      caixaNome = '';
+      estoqueNome = '';
+      tabelaVendaId = null;
+      tabelaVendaCodigo = '';
+      tabelaVendaDescricao = '';
       empresaId = null;
       empresaNome = '';
       userId = null;
