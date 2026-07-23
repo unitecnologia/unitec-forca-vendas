@@ -153,6 +153,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final situacao = (p['situacao'] ?? '').toString();
     if (situacao == 'faturado') return 'faturado';
     if (situacao == 'cancelado') return 'cancelado';
+    if (situacao == 'financeiro') return 'financeiro';
     final status = (p['status'] ?? '').toString();
     if (status == 'importado') return 'enviado';
     return status.isNotEmpty ? status : 'fechado';
@@ -281,6 +282,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
   }
 
   void _menuDocumentos(BuildContext context, String uuid) {
+    final tipoForcado = widget.tipoFiltro;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -292,11 +294,18 @@ class _PedidosScreenState extends State<PedidosScreen> {
               leading: const Icon(Icons.picture_as_pdf_outlined, color: Brand.blue),
               title: Text('Compartilhar PDF',
                   style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
-              subtitle: Text('WhatsApp, e-mail, etc.',
+              subtitle: Text(
+                  tipoForcado == 'orcamento'
+                      ? 'WhatsApp, e-mail — PDF de orçamento'
+                      : 'WhatsApp, e-mail, etc.',
                   style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
               onTap: () {
                 Navigator.pop(ctx);
-                PedidoDocumentActions.compartilhar(context, uuid);
+                PedidoDocumentActions.compartilhar(
+                  context,
+                  uuid,
+                  tipoForcado: tipoForcado,
+                );
               },
             ),
             ListTile(
@@ -305,7 +314,11 @@ class _PedidosScreenState extends State<PedidosScreen> {
                   style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
               onTap: () {
                 Navigator.pop(ctx);
-                PedidoDocumentActions.imprimir(context, uuid);
+                PedidoDocumentActions.imprimir(
+                  context,
+                  uuid,
+                  tipoForcado: tipoForcado,
+                );
               },
             ),
           ],
@@ -405,6 +418,8 @@ class _PedidoCard extends StatelessWidget {
         return (Colors.red, 'Erro', Icons.error_outline);
       case 'faturado':
         return (Brand.blue, 'Faturado', Icons.receipt_long_outlined);
+      case 'financeiro':
+        return (const Color(0xFFCA8A04), 'Financeiro', Icons.account_balance_wallet_outlined);
       case 'aberto':
         return (Brand.blue, 'Aberto', Icons.description_outlined);
       case 'fechado':

@@ -11,13 +11,10 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/waiting_approval_screen.dart';
 
-/// Esconde a barra de navegação do Android (botões voltar/home/recentes),
-/// mantendo apenas a barra de status (relógio/bateria) no topo.
+/// Mantém barras do sistema padrão — modos manuais/edgeToEdge
+/// já atrapalharam o teclado no login em alguns Android.
 Future<void> _aplicarModoTela() async {
-  await SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.manual,
-    overlays: [SystemUiOverlay.top],
-  );
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 
 Future<void> main() async {
@@ -58,9 +55,8 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Reaplica ao voltar ao foco (ex.: depois de fechar o teclado).
     if (state == AppLifecycleState.resumed) {
-      _aplicarModoTela();
+      // Não reaplica SystemChrome aqui: no Android isso costuma fechar/travar o teclado.
       WakelockPlus.enable();
       if (widget.state.isLoggedIn) {
         widget.state.sync.syncNow();

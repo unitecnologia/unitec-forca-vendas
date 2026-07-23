@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 15,
+      version: 16,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -73,6 +73,12 @@ class LocalDb {
         }
         if (oldVersion < 15) {
           await db.execute('ALTER TABLE customers ADD COLUMN price_table_id INTEGER');
+        }
+        if (oldVersion < 16) {
+          await db.execute('DROP TABLE IF EXISTS transportadoras');
+          await db.execute(_createTransportadorasSql);
+          // Força pull completo na próxima sync para popular transportadoras.
+          await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
         }
       },
       onCreate: (db, _) async {
@@ -143,6 +149,7 @@ class LocalDb {
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
         await db.execute(_createOutboxCustomersSql);
         await db.execute(_createFormasPagamentoSql);
+        await db.execute(_createTransportadorasSql);
         await db.execute(_createVisitasSemVendaSql);
         await db.execute(_createPedidosFvCacheSql);
       },
@@ -190,6 +197,17 @@ class LocalDb {
             codigo INTEGER, descricao TEXT, tipo TEXT,
             nfce INTEGER, max_parcelas INTEGER,
             tabelas_json TEXT   -- [{id, dias, ordem}, ...]
+          )''';
+
+  static const String _createTransportadorasSql = '''
+          CREATE TABLE IF NOT EXISTS transportadoras (
+            id INTEGER PRIMARY KEY,
+            codigo TEXT,
+            nome TEXT,
+            proprietario TEXT,
+            apelido TEXT,
+            ativo INTEGER DEFAULT 1,
+            updated_at TEXT
           )''';
 
   static const String _createOutboxCustomersSql = '''
@@ -246,13 +264,7 @@ class LocalDb {
   /// Garante a tabela local de transportadoras (pedido pode abrir antes do sync).
   Future<void> ensureTransportadorasTable() async {
     final database = await db;
-    await database.execute('''
-      CREATE TABLE IF NOT EXISTS transportadoras (
-        id INTEGER PRIMARY KEY,
-        codigo TEXT,
-        nome TEXT,
-        ativo INTEGER DEFAULT 1
-      )''');
+    await database.execute(_createTransportadorasSql);
   }
 
   Future<int> count(String table) async {
@@ -285,8 +297,12 @@ class LocalDb {
 
   Future<List<Map<String, dynamic>>> pendingOrders() async {
     final database = await db;
-    return database.query('outbox_orders',
-        where: "status = ?", whereArgs: ['pendente'], orderBy: 'created_at');
+    return database.query(
+      'outbox_orders',
+      where: "status IN (?, ?)",
+      whereArgs: ['pendente', 'financeiro'],
+      orderBy: 'created_at',
+    );
   }
 
   Future<void> markOrder(String uuid, String status, {String? erro, String? numero, String? numeroPedido}) async {
@@ -334,8 +350,14 @@ class LocalDb {
       data['status'] = 'faturado';
     } else if (situacao == 'cancelado') {
       data['status'] = 'cancelado';
-    } else if (localStatus == 'pendente' || localStatus == 'erro') {
+    } else if (situacao == 'financeiro') {
+      data['status'] = 'financeiro';
+      data['erro'] = null;
+    } else if (localStatus == 'pendente' ||
+        localStatus == 'erro' ||
+        localStatus == 'financeiro') {
       // ERP já tem o pedido — não deve continuar contando como pendente no app.
+      // Liberação financeira (financeiro → pendente) vira "enviado".
       data['status'] = 'enviado';
       data['erro'] = null;
     }
@@ -354,7 +376,7 @@ class LocalDb {
     final database = await db;
     final rows = await database.rawQuery(
       'SELECT o.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
-      'c.bairro, c.cidade_nome, c.uf, c.cep, c.fone1, c.celular1, c.whatsapp '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp '
       'FROM outbox_orders o '
       'LEFT JOIN customers c ON c.id = o.cliente_id '
       'WHERE o.uuid = ? LIMIT 1',
@@ -373,7 +395,7 @@ class LocalDb {
     final database = await db;
     final rows = await database.rawQuery(
       'SELECT p.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
-      'c.bairro, c.cidade_nome, c.uf, c.cep, c.fone1, c.celular1, c.whatsapp '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp '
       'FROM pedidos_fv_cache p '
       'LEFT JOIN customers c ON c.id = p.cliente_id '
       'WHERE p.uuid = ? LIMIT 1',
@@ -412,7 +434,7 @@ class LocalDb {
   Future<int> pendingCount() async {
     final database = await db;
     final orders = await database
-        .rawQuery("SELECT COUNT(*) c FROM outbox_orders WHERE status = 'pendente'");
+        .rawQuery("SELECT COUNT(*) c FROM outbox_orders WHERE status IN ('pendente', 'financeiro')");
     final customers = await database
         .rawQuery("SELECT COUNT(*) c FROM outbox_customers WHERE status = 'pendente'");
     return ((orders.first['c'] as int?) ?? 0) + ((customers.first['c'] as int?) ?? 0);

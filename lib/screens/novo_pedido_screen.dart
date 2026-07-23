@@ -13,6 +13,7 @@ import '../sync/sync_service.dart';
 import '../ui/brand.dart';
 import '../ui/barcode_scan.dart';
 import '../ui/cliente_credito_check.dart';
+import '../ui/credito_alert_dialog.dart';
 import '../ui/format.dart';
 import '../ui/pedido_envio_dialog.dart';
 import '../ui/pdv_alert_dialog.dart';
@@ -133,6 +134,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   bool _salvando = false;
   bool _sincDesconto = false;
   bool _creditoLiberado = false;
+  ClienteCreditoAlerta? _creditoAlerta;
   /// true se o vendedor alterou a lista manualmente (não sobrescrever até trocar cliente).
   bool _listaPrecoManual = false;
   SyncService? _sync;
@@ -166,11 +168,35 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (widget.documentoUuid != null && widget.documentoUuid!.isNotEmpty) {
       await _carregarDocumento(widget.documentoUuid!);
     } else if (_cliente != null && mounted) {
+      await _enrichClienteAberto();
+      if (!mounted) return;
       setState(() {
         _preselecionarDoCliente();
         _aplicarListaPrecoPreferida(forcar: true);
       });
     }
+  }
+
+  /// Garante totais financeiros no mapa do cliente (quando veio sem a busca do sheet).
+  Future<void> _enrichClienteAberto() async {
+    final c = _cliente;
+    if (c == null) return;
+    if (c.containsKey('total_aberto') && c.containsKey('total_vencido')) return;
+    final id = (c['id'] as num?)?.toInt();
+    if (id == null) return;
+    final hoje = DateTime.now();
+    final hojeStr =
+        '${hoje.year.toString().padLeft(4, '0')}-${hoje.month.toString().padLeft(2, '0')}-${hoje.day.toString().padLeft(2, '0')}';
+    final rows = await _db.query(
+      'SELECT '
+      'COALESCE(SUM(CASE WHEN saldo > 0 THEN saldo ELSE 0 END), 0) AS total_aberto, '
+      'COALESCE(SUM(CASE WHEN saldo > 0 AND vencimento < ? THEN saldo ELSE 0 END), 0) AS total_vencido '
+      'FROM financeiro WHERE cliente_id = ?',
+      [hojeStr, id],
+    );
+    final aberto = (rows.isNotEmpty ? (rows.first['total_aberto'] as num?)?.toDouble() : null) ?? 0;
+    final vencido = (rows.isNotEmpty ? (rows.first['total_vencido'] as num?)?.toDouble() : null) ?? 0;
+    _cliente = {...c, 'total_aberto': aberto, 'total_vencido': vencido};
   }
 
   Future<void> _carregarDocumento(String uuid) async {
@@ -186,7 +212,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final clienteId = _asInt(doc['cliente_id']);
     Map<String, dynamic>? cliente;
     if (clienteId != null) {
-      final rows = await _db.query('SELECT * FROM customers WHERE id = ? LIMIT 1', [clienteId]);
+      final rows = await _db.query(
+        "SELECT c.*, "
+        "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+        "  WHERE f.cliente_id = c.id AND f.saldo > 0), 0) AS total_aberto, "
+        "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+        "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
+        'FROM customers c WHERE c.id = ? LIMIT 1',
+        [clienteId],
+      );
       if (rows.isNotEmpty) cliente = rows.first;
     }
 
@@ -716,13 +750,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix).
   bool get _avulsoOculto => _formaTipo() == 'dinheiro' || _formaTipo() == 'pix';
 
-  /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma definida.
-  bool get _avulsoBloqueado => _clienteComFormaDefinida;
+  /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma definida
+  /// ou quando o Prazo/Parcelamento está selecionado.
+  bool get _avulsoBloqueado => _clienteComFormaDefinida || _tabelaPrazoId != null;
 
   /// Regra 3: havendo Prazo Avulso preenchido, o Prazo/Parcelamento some.
   bool get _avulsoPreenchido => _condicao.text.trim().isNotEmpty;
 
-  /// Boletos vencidos e/ou limite de crédito — padrão PDV com Sim/Não.
+  /// Boletos vencidos e/ou limite de crédito — pedido vai para liberação no ERP.
   Future<bool> _confirmarCreditoCliente() async {
     if (_tipo != 'pedido') return true;
 
@@ -735,19 +770,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
     if (alerta == null) {
       _creditoLiberado = false;
+      _creditoAlerta = null;
       return true;
     }
 
     if (!mounted) return false;
 
-    final liberar = await PdvAlertDialog.showSimNao(
-      context,
-      titulo: alerta.titulo,
-      detalhe: alerta.detalhe,
-      hint: ClienteCreditoAlerta.hint,
-    );
+    final liberar = await CreditoAlertDialog.show(context, alerta: alerta);
 
-    if (liberar) _creditoLiberado = true;
+    if (liberar) {
+      _creditoLiberado = true;
+      _creditoAlerta = alerta;
+    }
     return liberar;
   }
 
@@ -763,6 +797,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
     // Pedido pago no Pix: gera a cobrança e só persiste após confirmar.
     if (_tipo == 'pedido' && _isFormaPix()) {
+      final syncStatus = context.read<AppState>().sync.status;
+      if (syncStatus == SyncStatus.offline) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pix precisa de internet. Troque a forma de pagamento ou aguarde a conexão.'),
+          ),
+        );
+        return;
+      }
       await _fluxoPix();
       return;
     }
@@ -844,6 +888,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'frete': _freteValor,
       'transportadora_id': _transportadoraId,
       'transportadora_nome': _transportadoraLabel(_transportadoraId),
+      if (_creditoAlerta != null) ..._creditoAlerta!.toPayload(),
       if (_creditoLiberado) 'credito_liberado': true,
       if (_orcamentoOrigemUuid != null) 'orcamento_origem_uuid': _orcamentoOrigemUuid,
       if (_orcamentoOrigemNumero != null) 'orcamento_origem_numero': _orcamentoOrigemNumero,
@@ -861,7 +906,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'longitude': lng,
       'itens_json': itensJson,
       'created_at': DateTime.now().toUtc().toIso8601String(),
-      'status': 'pendente',
+      'status': _creditoAlerta != null ? 'financeiro' : 'pendente',
       'erro': null,
       'numero': null,
       'extra_json': jsonEncode(extra),
@@ -1066,7 +1111,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           if (!_avulsoOculto)
             _field('Prazo Avulso',
                 _campoTexto(_condicao,
-                    hint: _avulsoBloqueado ? 'Definido no cadastro do cliente' : 'Ex.: 30,60,90',
+                    hint: _clienteComFormaDefinida
+                        ? 'Definido no cadastro do cliente'
+                        : (_tabelaPrazoId != null
+                            ? 'Use o prazo/parcelamento'
+                            : 'Ex.: 30,60,90'),
                     enabled: !_avulsoBloqueado,
                     onChanged: (v) => setState(() {
                           if (v.trim().isNotEmpty) {
@@ -1084,6 +1133,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               onChanged: (id) => setState(() {
                 _tabelaPrazoId = id;
                 _tabelaDias = _tabelaById(id)?['dias']?.toString();
+                if (id != null) {
+                  _condicao.clear();
+                }
               }),
             )),
           _vencimentosPreview(),
@@ -1576,11 +1628,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     }
 
     final nome = (_cliente!['nome_razao'] ?? 'Cliente').toString();
+    final codigo = (_cliente!['codigo'] ?? '').toString().trim();
     final doc = (_cliente!['cpf_cnpj'] ?? '').toString().trim();
-    final rua = [
-      _cliente!['endereco'],
-      _cliente!['numero'],
-    ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(', ');
+    final aberto = (_cliente!['total_aberto'] as num?)?.toDouble() ?? 0;
+    final vencido = (_cliente!['total_vencido'] as num?)?.toDouble() ?? 0;
+    final atrasado = vencido > 0.009;
+    final temLimite = limite != null && limite > 0;
+    final disp = temLimite ? (limite! - aberto).clamp(0.0, double.infinity) : null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -1591,7 +1645,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           borderRadius: BorderRadius.circular(8),
           onTap: _selecionarCliente,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+            padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFE2E8F0)),
@@ -1603,32 +1657,49 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(nome,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 14 + Brand.textBump01cm,
+                              fontSize: 13.5 + Brand.textBump01cm,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF0F172A),
+                              color: const Color(0xFF0F172A),
                               height: 1.15)),
-                      if (doc.isNotEmpty)
-                        Text(doc,
-                            style: TextStyle(
-                                fontSize: 12 + Brand.textBump01cm,
-                                color: Color(0xFF64748B),
-                                height: 1.25)),
-                      if (rua.isNotEmpty)
-                        Text(rua,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 11 + Brand.textBump01cm,
-                                color: Color(0xFF94A3B8),
-                                height: 1.25)),
-                      if (limite != null)
-                        Text('Limite ${brMoney(limite)}',
-                            style: TextStyle(
-                                fontSize: 11 + Brand.textBump01cm,
-                                fontWeight: FontWeight.w600,
-                                color: Brand.blue,
-                                height: 1.3)),
+                      Text.rich(
+                        TextSpan(
+                          style: TextStyle(
+                            fontSize: 11.5 + Brand.textBump01cm,
+                            color: const Color(0xFF64748B),
+                            height: 1.25,
+                          ),
+                          children: [
+                            if (codigo.isNotEmpty)
+                              TextSpan(text: 'Cód. $codigo'),
+                            if (temLimite) ...[
+                              if (codigo.isNotEmpty) const TextSpan(text: ' · '),
+                              TextSpan(text: 'Limite ${brMoney(limite)}'),
+                              TextSpan(text: ' · Disp. ${brMoney(disp!)}'),
+                            ],
+                            if (doc.isNotEmpty) ...[
+                              if (codigo.isNotEmpty || temLimite)
+                                const TextSpan(text: ' · '),
+                              TextSpan(text: doc),
+                            ],
+                            if (atrasado) ...[
+                              if (codigo.isNotEmpty || temLimite || doc.isNotEmpty)
+                                const TextSpan(text: ' · '),
+                              TextSpan(
+                                text: 'Ex. ${brMoney(vencido)}',
+                                style: const TextStyle(
+                                  color: Color(0xFFDC2626),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
@@ -1940,6 +2011,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        hintStyle: TextStyle(
+          fontSize: 14 + Brand.textBump01cm,
+          fontWeight: FontWeight.w400,
+          color: const Color(0xFF94A3B8).withValues(alpha: 0.55),
+        ),
         prefixText: prefix,
         isDense: true,
         filled: true,
@@ -1949,6 +2025,10 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -2506,9 +2586,14 @@ class _BuscaSheetState extends State<_BuscaSheet> {
       final vendedorId = context.read<AppState>().config.vendedorId;
       if (widget.tabela == 'customers') {
         rows = await _db.query(
-          "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
-          "AND (${widget.campoNome} LIKE ? OR codigo LIKE ? OR apelido_fantasia LIKE ? OR cpf_cnpj LIKE ?) "
-          'ORDER BY ${widget.campoNome} LIMIT 60',
+          "SELECT c.*, "
+          "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+          "  WHERE f.cliente_id = c.id AND f.saldo > 0), 0) AS total_aberto, "
+          "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+          "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
+          "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id')} "
+          "AND (c.${widget.campoNome} LIKE ? OR c.codigo LIKE ? OR c.apelido_fantasia LIKE ? OR c.cpf_cnpj LIKE ?) "
+          'ORDER BY c.${widget.campoNome} LIMIT 60',
           [...FvCarteira.args(vendedorId), like, like, like, like],
         );
       } else {
@@ -2646,9 +2731,9 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                       ? const Center(child: Text('Nada encontrado.'))
                       : ListView.separated(
                           controller: controller,
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                          padding: const EdgeInsets.fromLTRB(12, 2, 12, 10),
                           itemCount: _rows.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          separatorBuilder: (_, __) => const SizedBox(height: 4),
                           itemBuilder: (_, i) =>
                               _isProdutos ? _produtoItem(_rows[i]) : _clienteItem(_rows[i]),
                         ),
@@ -2679,14 +2764,70 @@ class _BuscaSheetState extends State<_BuscaSheet> {
   }
 
   Widget _clienteItem(Map<String, dynamic> r) {
+    final nome = (r[widget.campoNome] ?? '').toString();
+    final codigo = (r['codigo'] ?? '').toString();
+    final limite = (r['limite_credito'] as num?)?.toDouble() ?? 0;
+    final aberto = (r['total_aberto'] as num?)?.toDouble() ?? 0;
+    final vencido = (r['total_vencido'] as num?)?.toDouble() ?? 0;
+    final atrasado = vencido > 0.009;
+    final disp = limite > 0 ? (limite - aberto).clamp(0.0, double.infinity) : null;
+
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text((r[widget.campoNome] ?? '').toString()),
-        subtitle: Text('Cód. ${r['codigo'] ?? ''}'),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
         onTap: () => Navigator.pop(context, r),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                nome,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  height: 1.15,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text.rich(
+                TextSpan(
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11.5,
+                    height: 1.2,
+                  ),
+                  children: [
+                    if (codigo.isNotEmpty) TextSpan(text: 'Cód. $codigo'),
+                    if (limite > 0) ...[
+                      if (codigo.isNotEmpty) const TextSpan(text: ' · '),
+                      TextSpan(text: 'Limite ${brMoney(limite)}'),
+                      TextSpan(text: ' · Disp. ${brMoney(disp!)}'),
+                    ],
+                    if (atrasado) ...[
+                      if (codigo.isNotEmpty || limite > 0)
+                        const TextSpan(text: ' · '),
+                      TextSpan(
+                        text: 'Ex. ${brMoney(vencido)}',
+                        style: const TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -196,6 +196,21 @@ class SyncService extends ChangeNotifier {
           });
     }
 
+    // Transportadoras ativas: cache local para seleção offline no pedido.
+    if (data['transportadoras'] != null) {
+      await _db.ensureTransportadorasTable();
+      await _db.deleteAll('transportadoras');
+      await _db.upsertAll('transportadoras', data['transportadoras'] ?? [], (r) => {
+            'id': r['id'],
+            'codigo': (r['codigo'] ?? '').toString(),
+            'nome': (r['nome'] ?? r['apelido'] ?? r['proprietario'] ?? '').toString(),
+            'proprietario': (r['proprietario'] ?? '').toString(),
+            'apelido': (r['apelido'] ?? '').toString(),
+            'ativo': _b(r['ativo'] ?? true),
+            'updated_at': r['updated_at'],
+          });
+    }
+
     // Grupos de produto (filtro na seleção de itens).
     if (data['grupos'] != null) {
       await _db.deleteAll('grupos');
@@ -337,6 +352,23 @@ class SyncService extends ChangeNotifier {
         'price_table_id': extra['price_table_id'],
         'lista_preco_nome': extra['lista_preco_nome'],
         'frete': extra['frete'] ?? 0,
+        'transportadora_id': extra['transportadora_id'],
+        'transportadora_nome': extra['transportadora_nome'],
+        'restricao_financeira': extra['restricao_financeira'] == true,
+        'credito_liberado': extra['credito_liberado'] == true,
+        'credito_titulos_vencidos': extra['credito_titulos_vencidos'] == true,
+        'credito_titulos_vencidos_saldo': extra['credito_titulos_vencidos_saldo'],
+        'credito_boleto_atrasado': extra['credito_boleto_atrasado'] == true,
+        'credito_boleto_saldo': extra['credito_boleto_saldo'],
+        'credito_limite_excedido': extra['credito_limite_excedido'] == true,
+        'credito_limite': extra['credito_limite'],
+        'credito_total_aberto': extra['credito_total_aberto'],
+        'credito_disponivel': extra['credito_disponivel'],
+        'credito_total_pedido': extra['credito_total_pedido'],
+        'credito_aberto_apos_pedido': extra['credito_aberto_apos_pedido'],
+        'credito_disponivel_apos_pedido': extra['credito_disponivel_apos_pedido'],
+        'credito_cliente_em_debito': extra['credito_cliente_em_debito'] == true,
+        'credito_motivo': extra['credito_motivo'],
         'latitude': o['latitude'],
         'longitude': o['longitude'],
         'created_at': o['created_at'],
@@ -372,9 +404,11 @@ class SyncService extends ChangeNotifier {
       final st = (m['status'] ?? '').toString();
       // ERP confirma com "importado"; "duplicado" também significa que já está no servidor.
       if (st == 'importado' || m['duplicado'] == true) {
+        final situacao = (m['situacao'] ?? '').toString();
+        final localStatus = situacao == 'financeiro' ? 'financeiro' : 'enviado';
         await _db.markOrder(
           uuid,
-          'enviado',
+          localStatus,
           numero: m['numero']?.toString(),
           numeroPedido: m['numero_pedido']?.toString(),
         );
@@ -465,6 +499,8 @@ class SyncService extends ChangeNotifier {
       status = 'faturado';
     } else if (situacao == 'cancelado') {
       status = 'cancelado';
+    } else if (situacao == 'financeiro') {
+      status = 'financeiro';
     } else if (status == 'importado') {
       status = 'enviado';
     }

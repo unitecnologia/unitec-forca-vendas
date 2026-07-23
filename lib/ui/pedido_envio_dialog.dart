@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'brand.dart';
+import 'phone_formatter.dart';
 import 'uppercase_input.dart';
 
 enum PedidoEnvioCanal { whatsapp, email }
@@ -69,7 +69,7 @@ class _PedidoEnvioDialogState extends State<_PedidoEnvioDialog> {
   @override
   void initState() {
     super.initState();
-    _whats = TextEditingController(text: widget.whatsappInicial);
+    _whats = TextEditingController(text: BrPhoneInputFormatter.format(widget.whatsappInicial));
     _email = TextEditingController(text: widget.emailInicial);
     _msg = TextEditingController(text: widget.mensagemInicial);
   }
@@ -88,10 +88,9 @@ class _PedidoEnvioDialogState extends State<_PedidoEnvioDialog> {
     final msg = _msg.text.trim();
 
     if (canal == PedidoEnvioCanal.whatsapp) {
-      final digits = whats.replaceAll(RegExp(r'\D'), '');
-      if (digits.length < 10) {
+      if (!BrPhoneInputFormatter.isValid(whats)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Informe um WhatsApp válido (DDD + número).')),
+          const SnackBar(content: Text('Informe um WhatsApp válido, ex.: (47)99644-9859')),
         );
         return;
       }
@@ -162,10 +161,10 @@ class _PedidoEnvioDialogState extends State<_PedidoEnvioDialog> {
             TextField(
               controller: _whats,
               keyboardType: TextInputType.phone,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s\(\)\-\+]'))],
+              inputFormatters: const [BrPhoneInputFormatter()],
               decoration: const InputDecoration(
                 labelText: 'WhatsApp',
-                hintText: '(47) 99999-9999',
+                hintText: '(47)99644-9859',
                 prefixIcon: Icon(Icons.chat_outlined, color: Brand.green),
                 isDense: true,
                 border: OutlineInputBorder(),
@@ -199,7 +198,7 @@ class _PedidoEnvioDialogState extends State<_PedidoEnvioDialog> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'O PDF será anexado no envio.',
+              'Na próxima tela, escolha WhatsApp ou e-mail para enviar o PDF.',
               style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
             ),
             const SizedBox(height: 16),

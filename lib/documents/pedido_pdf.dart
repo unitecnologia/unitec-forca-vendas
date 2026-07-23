@@ -14,7 +14,8 @@ class PedidoPdf {
     final extra = _parseMap(order['extra_json'] as String?);
     final itens = _parseItens(order['itens_json'] as String?);
     final tipo = (order['tipo'] ?? 'pedido').toString();
-    final titulo = tipo == 'orcamento' ? 'ORÇAMENTO' : 'PEDIDO';
+    final ehOrcamento = tipo == 'orcamento';
+    final titulo = ehOrcamento ? 'ORÇAMENTO' : 'PEDIDO';
     final numeroDav = (order['numero'] ?? '').toString();
     final numeroPedido = (order['numero_pedido'] ?? '').toString();
     final createdAt = DateTime.tryParse((order['created_at'] ?? '').toString());
@@ -37,16 +38,31 @@ class PedidoPdf {
                   pw.Text(kAppName, style: pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
                   pw.SizedBox(height: 4),
                   pw.Text(titulo, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+                  if (ehOrcamento) ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      'Documento de orçamento (não é pedido)',
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+                    ),
+                  ],
                 ],
               ),
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
-                  if (numeroDav.isNotEmpty)
-                    pw.Text('Nº DAV: $numeroDav', style: const pw.TextStyle(fontSize: 12)),
-                  if (numeroPedido.isNotEmpty)
-                    pw.Text('Nº Pedido ERP: $numeroPedido',
-                        style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                  if (ehOrcamento) ...[
+                    if (numeroDav.isNotEmpty)
+                      pw.Text('Nº Orçamento: $numeroDav',
+                          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    if (numeroPedido.isNotEmpty && numeroPedido != numeroDav)
+                      pw.Text('Ref.: $numeroPedido', style: const pw.TextStyle(fontSize: 11)),
+                  ] else ...[
+                    if (numeroDav.isNotEmpty)
+                      pw.Text('Nº DAV: $numeroDav', style: const pw.TextStyle(fontSize: 12)),
+                    if (numeroPedido.isNotEmpty)
+                      pw.Text('Nº Pedido ERP: $numeroPedido',
+                          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                  ],
                   pw.Text('Data: $dataStr', style: const pw.TextStyle(fontSize: 10)),
                 ],
               ),

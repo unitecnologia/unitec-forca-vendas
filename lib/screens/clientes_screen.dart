@@ -35,9 +35,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
     final like = '%${_termo.trim()}%';
     final vendedorId = context.read<AppState>().config.vendedorId;
     final rows = await _db.query(
-      "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
-      "AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
-      'ORDER BY nome_razao LIMIT 200',
+      "SELECT c.*, "
+      "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+      "  WHERE f.cliente_id = c.id AND f.saldo > 0), 0) AS total_aberto, "
+      "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
+      "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
+      "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id')} "
+      "AND (c.nome_razao LIKE ? OR c.apelido_fantasia LIKE ? OR c.codigo LIKE ? OR c.cpf_cnpj LIKE ?) "
+      'ORDER BY c.nome_razao LIMIT 200',
       [...FvCarteira.args(vendedorId), like, like, like, like],
     );
     if (mounted) {
@@ -112,10 +117,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       .where((e) => (e ?? '').toString().isNotEmpty)
                       .join(' - ');
                   final codigo = (c['codigo'] ?? '').toString();
-                  final subtitulo = [
-                    if (cidade.isNotEmpty) cidade,
-                    if (codigo.isNotEmpty) 'Cód. $codigo',
-                  ].join(' · ');
+                  final limite = (c['limite_credito'] as num?)?.toDouble() ?? 0;
+                  final aberto = (c['total_aberto'] as num?)?.toDouble() ?? 0;
+                  final vencido = (c['total_vencido'] as num?)?.toDouble() ?? 0;
+                  final atrasado = vencido > 0.009;
+                  final disp = limite > 0 ? (limite - aberto).clamp(0.0, double.infinity) : null;
                   final temMapa = _enderecoCompleto(c).isNotEmpty;
 
                   return Material(
@@ -125,13 +131,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => _detalhe(c),
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
+                        padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
                         child: Row(
                           children: [
                             CircleAvatar(
-                              radius: 16,
+                              radius: 14,
                               backgroundColor: Brand.blue.withValues(alpha: 0.12),
-                              child: const Icon(Icons.person, size: 18, color: Brand.blue),
+                              child: const Icon(Icons.person, size: 16, color: Brand.blue),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -144,20 +150,49 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 13.5,
-                                      height: 1.2,
+                                      fontSize: 13,
+                                      height: 1.15,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    subtitulo.isEmpty ? '—' : subtitulo,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF64748B),
-                                      fontSize: 12,
-                                      height: 1.2,
+                                  const SizedBox(height: 1),
+                                  Text.rich(
+                                    TextSpan(
+                                      style: const TextStyle(
+                                        color: Color(0xFF64748B),
+                                        fontSize: 11.5,
+                                        height: 1.2,
+                                      ),
+                                      children: [
+                                        if (cidade.isNotEmpty)
+                                          TextSpan(text: cidade),
+                                        if (codigo.isNotEmpty) ...[
+                                          if (cidade.isNotEmpty)
+                                            const TextSpan(text: ' · '),
+                                          TextSpan(text: 'Cód. $codigo'),
+                                        ],
+                                        if (limite > 0) ...[
+                                          if (cidade.isNotEmpty || codigo.isNotEmpty)
+                                            const TextSpan(text: ' · '),
+                                          TextSpan(text: 'Limite ${brMoney(limite)}'),
+                                          TextSpan(text: ' · Disp. ${brMoney(disp!)}'),
+                                        ],
+                                        if (atrasado) ...[
+                                          if (cidade.isNotEmpty ||
+                                              codigo.isNotEmpty ||
+                                              limite > 0)
+                                            const TextSpan(text: ' · '),
+                                          TextSpan(
+                                            text: 'Ex. ${brMoney(vencido)}',
+                                            style: const TextStyle(
+                                              color: Color(0xFFDC2626),
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),

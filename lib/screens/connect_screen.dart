@@ -132,6 +132,29 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 label: Text('Reconectar (${ultimo.replaceFirst(RegExp(r'^https?://'), '')})'),
                 style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)),
               ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: ocupado
+                    ? null
+                    : () async {
+                        setState(() {
+                          _conectando = true;
+                          _erro = null;
+                        });
+                        try {
+                          await context.read<AppState>().continueOffline();
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() {
+                              _erro = '$e';
+                              _conectando = false;
+                            });
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.cloud_off_outlined),
+                label: const Text('Continuar offline (vendas no aparelho)'),
+              ),
               const SizedBox(height: 12),
             ],
             FilledButton.icon(

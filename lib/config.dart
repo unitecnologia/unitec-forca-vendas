@@ -26,6 +26,9 @@ class AppConfig {
     this.lastSyncIso,
     this.rememberUser = false,
     this.biometricEnabled = false,
+    this.cachedToken = '',
+    this.cachedEmpresasJson = '[]',
+    this.cachedUsuariosJson = '{}',
   });
 
   String baseUrl;
@@ -57,6 +60,13 @@ class AppConfig {
   /// Usa digital/biometria para entrar (exige [rememberUser] e senha guardada).
   bool biometricEnabled;
 
+  /// Último token válido — permite reabrir sessão offline (mesmo após logout com lembrar usuário).
+  String cachedToken;
+
+  /// Cache JSON de empresas/usuários para montar o login sem servidor.
+  String cachedEmpresasJson;
+  String cachedUsuariosJson;
+
   bool get isConnected => baseUrl.isNotEmpty;
   bool get isApproved => deviceApproved;
   bool get isLoggedIn => token.isNotEmpty;
@@ -86,6 +96,9 @@ class AppConfig {
         'lastSyncIso': lastSyncIso,
         'rememberUser': rememberUser,
         'biometricEnabled': biometricEnabled,
+        'cachedToken': cachedToken,
+        'cachedEmpresasJson': cachedEmpresasJson,
+        'cachedUsuariosJson': cachedUsuariosJson,
       };
 
   static AppConfig fromJson(Map<String, dynamic> j) => AppConfig(
@@ -110,6 +123,9 @@ class AppConfig {
         lastSyncIso: j['lastSyncIso'],
         rememberUser: j['rememberUser'] == true,
         biometricEnabled: j['biometricEnabled'] == true,
+        cachedToken: j['cachedToken'] ?? '',
+        cachedEmpresasJson: j['cachedEmpresasJson'] ?? '[]',
+        cachedUsuariosJson: j['cachedUsuariosJson'] ?? '{}',
       );
 
   static const _key = 'unitec_fv_config';
@@ -149,6 +165,7 @@ class AppConfig {
       userId = null;
       userName = '';
       biometricEnabled = false;
+      cachedToken = '';
     }
   }
 }

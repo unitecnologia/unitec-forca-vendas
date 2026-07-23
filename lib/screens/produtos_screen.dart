@@ -28,12 +28,15 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   final _db = LocalDb.instance;
   final _buscaCtrl = TextEditingController();
   List<Map<String, dynamic>> _rows = [];
+  List<String> _grupos = [];
   String _termo = '';
+  String? _grupoSel; // null = Todos
   bool _carregando = true;
 
   @override
   void initState() {
     super.initState();
+    _carregarGrupos();
     _buscar();
   }
 
@@ -41,6 +44,46 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   void dispose() {
     _buscaCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarGrupos() async {
+    // Mesma regra da tela de vendas: grupos com flag App no ERP.
+    var nomes = <String>[];
+
+    try {
+      final rows = await _db.query(
+        "SELECT nome FROM grupos WHERE (ativo = 1 OR ativo IS NULL) "
+        "AND (mostrar_no_app = 1 OR mostrar_no_app IS NULL) "
+        "AND nome IS NOT NULL AND TRIM(nome) <> '' ORDER BY nome",
+      );
+      nomes = rows
+          .map((r) => (r['nome'] ?? '').toString().trim())
+          .where((g) => g.isNotEmpty)
+          .toList();
+    } catch (_) {}
+
+    if (nomes.isEmpty) {
+      try {
+        final rows = await _db.query(
+          "SELECT DISTINCT grupo AS nome FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
+          "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
+        );
+        nomes = rows
+            .map((r) => (r['nome'] ?? '').toString().trim())
+            .where((g) => g.isNotEmpty)
+            .toList();
+      } catch (_) {
+        nomes = [];
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _grupos = nomes;
+      if (_grupoSel != null && !_grupos.contains(_grupoSel)) {
+        _grupoSel = null;
+      }
+    });
   }
 
   Future<void> _escanearBarras() async {
@@ -52,7 +95,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   }
 
   Future<void> _buscar() async {
-    final f = ProdutoBusca.filtro(_termo);
+    final f = ProdutoBusca.filtro(_termo, grupo: _grupoSel);
     final rows = await _db.query(
       'SELECT * FROM products WHERE ${f.whereExtra} ORDER BY ${f.orderBy} LIMIT 200',
       f.args,
@@ -63,6 +106,28 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
         _carregando = false;
       });
     }
+  }
+
+  Widget _chip(String label, bool sel, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: sel,
+        onSelected: (_) => onTap(),
+        selectedColor: Brand.blue,
+        labelStyle: TextStyle(
+          color: sel ? Colors.white : Colors.black87,
+          fontWeight: FontWeight.w600,
+          fontSize: 12.5,
+        ),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+    );
   }
 
   @override
@@ -143,6 +208,30 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               },
             ),
           ),
+          if (_grupos.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: Brand.bg,
+              padding: const EdgeInsets.fromLTRB(0, 10, 0, 4),
+              child: SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: [
+                    _chip('Todos', _grupoSel == null, () {
+                      setState(() => _grupoSel = null);
+                      _buscar();
+                    }),
+                    for (final g in _grupos)
+                      _chip(g, _grupoSel == g, () {
+                        setState(() => _grupoSel = g);
+                        _buscar();
+                      }),
+                  ],
+                ),
+              ),
+            ),
           if (_carregando)
             const Expanded(child: Center(child: CircularProgressIndicator()))
           else if (_rows.isEmpty)

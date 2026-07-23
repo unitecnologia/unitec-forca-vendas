@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import 'api/api_client.dart';
@@ -15,6 +20,13 @@ class AppState extends ChangeNotifier {
 
   /// Restaura sessão persistida (sync periódica após reabrir o app).
   Future<void> initialize() async {
+    // Sem ping: se já conectou antes, reabre o endereço para login/vendas offline.
+    if (config.baseUrl.isEmpty && config.lastBaseUrl.isNotEmpty) {
+      config.baseUrl = config.lastBaseUrl;
+      await config.save();
+      notifyListeners();
+      AppLog.instance.info('conexão', 'Restaurada offline: ${config.baseUrl}');
+    }
     if (config.isLoggedIn) {
       sync.start();
     }
@@ -27,6 +39,47 @@ class AppState extends ChangeNotifier {
   bool get isConnected => config.isConnected;
   bool get isApproved => config.isApproved;
   bool get isLoggedIn => config.isLoggedIn;
+
+  static bool isNetworkError(Object e) {
+    if (e is TimeoutException) return true;
+    if (e is SocketException) return true;
+    if (e is http.ClientException) return true;
+    if (e is ApiException) {
+      final m = e.message.toLowerCase();
+      return m.contains('socket') ||
+          m.contains('timed out') ||
+          m.contains('timeout') ||
+          m.contains('connection') ||
+          m.contains('failed host') ||
+          m.contains('network') ||
+          m.contains('conexão') ||
+          m.contains('conectar');
+    }
+    final m = e.toString().toLowerCase();
+    return m.contains('socket') ||
+        m.contains('timed out') ||
+        m.contains('timeout') ||
+        m.contains('connection refused') ||
+        m.contains('failed host') ||
+        m.contains('network is unreachable') ||
+        m.contains('clientexception');
+  }
+
+  /// Continua com o último servidor sem testar a rede (modo offline).
+  Future<void> continueOffline() async {
+    final url = config.lastBaseUrl.trim();
+    if (url.isEmpty) {
+      throw Exception('Nenhum servidor anterior. Conecte online pelo menos uma vez.');
+    }
+    if (!config.deviceApproved) {
+      throw Exception('Aparelho ainda não autorizado. Conecte online para liberar.');
+    }
+    config.baseUrl = url;
+    await ensureDeviceIdentity();
+    await config.save();
+    AppLog.instance.warn('conexão', 'Modo offline com $url');
+    notifyListeners();
+  }
 
   /// Garante um identificador único e um nome padrão (modelo do aparelho).
   Future<void> ensureDeviceIdentity() async {
@@ -65,7 +118,6 @@ class AppState extends ChangeNotifier {
       s = 'http://$s';
     }
     s = s.replaceAll(RegExp(r'/+$'), '');
-    // Se não tiver porta explícita, usa a padrão do ERP.
     final uri = Uri.tryParse(s);
     if (uri != null && !uri.hasPort) {
       s = '${uri.scheme}://${uri.host}:$defaultPort';
@@ -89,12 +141,10 @@ class AppState extends ChangeNotifier {
     await _applyConnection(clean);
   }
 
-  /// Salva a conexão encontrada (manual ou automática).
   Future<void> _applyConnection(String baseUrl) async {
     config.baseUrl = baseUrl;
     config.lastBaseUrl = baseUrl;
     await ensureDeviceIdentity();
-    // Não zera autorização aqui: o status real vem do ERP (register/refresh).
     await config.save();
     notifyListeners();
   }
@@ -104,15 +154,12 @@ class AppState extends ChangeNotifier {
     await _applyConnection(baseUrl);
   }
 
-  /// Atualiza o nome do aparelho (mostrado ao admin).
   Future<void> setDeviceName(String name) async {
     config.deviceName = name.trim();
     await config.save();
     notifyListeners();
   }
 
-  /// Registra o aparelho no ERP (cria a solicitação de autorização).
-  /// Retorna o código de pareamento para o vendedor conferir no ERP.
   Future<String> registerDevice() async {
     await ensureDeviceIdentity();
     final resp = await api.registerDevice(deviceName: config.deviceName);
@@ -125,7 +172,6 @@ class AppState extends ChangeNotifier {
     return config.pairingCode;
   }
 
-  /// Consulta o status de autorização. Retorna o status textual do servidor.
   Future<String> refreshApproval() async {
     final resp = await api.deviceStatus();
     final status = (resp['status'] ?? 'desconhecido').toString();
@@ -146,8 +192,6 @@ class AppState extends ChangeNotifier {
     return status;
   }
 
-  /// Se a API indicar aparelho pendente/revogado, alinha o flag local
-  /// (volta à tela de autorização).
   Future<bool> syncDeviceApprovalFromError(Object e) async {
     final blocked = e is ApiException
         ? e.isDeviceBlocked
@@ -162,12 +206,42 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  Future<Map<String, dynamic>> info() async {
-    return api.info();
+  Future<Map<String, dynamic>> info() async => api.info();
+
+  Future<List<dynamic>> usuariosDaEmpresa(int empresaId) async => api.usuarios(empresaId);
+
+  Future<void> cacheEmpresas(List<dynamic> empresas) async {
+    config.cachedEmpresasJson = jsonEncode(empresas);
+    await config.save();
   }
 
-  Future<List<dynamic>> usuariosDaEmpresa(int empresaId) async {
-    return api.usuarios(empresaId);
+  Future<void> cacheUsuarios(int empresaId, List<dynamic> users) async {
+    Map<String, dynamic> map = {};
+    try {
+      map = jsonDecode(config.cachedUsuariosJson) as Map<String, dynamic>? ?? {};
+    } catch (_) {}
+    map['$empresaId'] = users;
+    config.cachedUsuariosJson = jsonEncode(map);
+    await config.save();
+  }
+
+  List<dynamic> empresasEmCache() {
+    try {
+      final list = jsonDecode(config.cachedEmpresasJson);
+      return list is List ? List<dynamic>.from(list) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<dynamic> usuariosEmCache(int empresaId) {
+    try {
+      final map = jsonDecode(config.cachedUsuariosJson) as Map<String, dynamic>?;
+      final list = map?['$empresaId'];
+      return list is List ? List<dynamic>.from(list) : [];
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> login(
@@ -178,14 +252,48 @@ class AppState extends ChangeNotifier {
     bool rememberUser = false,
     bool biometricEnabled = false,
   }) async {
-    final resp = await api.login(
-      empresaId: empresaId,
-      userId: userId,
-      senha: senha,
-      deviceUuid: config.deviceUuid,
-      deviceName: config.deviceName,
-    );
+    try {
+      final resp = await api.login(
+        empresaId: empresaId,
+        userId: userId,
+        senha: senha,
+        deviceUuid: config.deviceUuid,
+        deviceName: config.deviceName,
+      );
+      await _aplicarLoginOnline(
+        resp,
+        empresaId: empresaId,
+        empresaNome: empresaNome,
+        rememberUser: rememberUser,
+        biometricEnabled: biometricEnabled,
+        senha: senha,
+      );
+    } catch (e) {
+      if (isNetworkError(e)) {
+        final ok = await _loginOffline(
+          empresaId: empresaId,
+          userId: userId,
+          senha: senha,
+          empresaNome: empresaNome,
+          rememberUser: rememberUser,
+          biometricEnabled: biometricEnabled,
+        );
+        if (ok) return;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _aplicarLoginOnline(
+    Map<String, dynamic> resp, {
+    required int empresaId,
+    String? empresaNome,
+    required bool rememberUser,
+    required bool biometricEnabled,
+    required String senha,
+  }) async {
     config.token = (resp['token'] ?? '').toString();
+    config.cachedToken = config.token;
     config.empresaId = empresaId;
     if (empresaNome != null) config.empresaNome = empresaNome;
     final user = resp['user'] as Map<String, dynamic>?;
@@ -204,7 +312,7 @@ class AppState extends ChangeNotifier {
     }
     config.rememberUser = rememberUser;
     config.biometricEnabled = rememberUser && biometricEnabled;
-    if (config.biometricEnabled) {
+    if (rememberUser) {
       await CredentialStore.saveSenha(senha);
     } else {
       await CredentialStore.clearSenha();
@@ -215,12 +323,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> _loginOffline({
+    required int empresaId,
+    required int userId,
+    required String senha,
+    String? empresaNome,
+    required bool rememberUser,
+    required bool biometricEnabled,
+  }) async {
+    final saved = await CredentialStore.readSenha();
+    final token = config.cachedToken.trim();
+    if (saved == null || saved.isEmpty || saved != senha) {
+      return false;
+    }
+    if (token.isEmpty) return false;
+    if (config.empresaId != null && config.empresaId != empresaId) return false;
+    if (config.userId != null && config.userId != userId) return false;
+
+    config.token = token;
+    config.empresaId = empresaId;
+    if (empresaNome != null && empresaNome.isNotEmpty) {
+      config.empresaNome = empresaNome;
+    }
+    config.userId = userId;
+    config.rememberUser = rememberUser;
+    config.biometricEnabled = rememberUser && biometricEnabled;
+    await config.save();
+    AppLog.instance.warn(
+      'login',
+      'Entrou OFFLINE como ${config.userName.isEmpty ? userId : config.userName}',
+    );
+    sync.start();
+    notifyListeners();
+    return true;
+  }
+
   Future<void> logout() async {
     sync.stop();
-    await api.logout();
+    try {
+      await api.logout();
+    } catch (_) {}
     if (!config.rememberUser) {
       await CredentialStore.clearSenha();
       config.biometricEnabled = false;
+      config.cachedToken = '';
     }
     config.clearSession();
     await config.save();
@@ -228,8 +374,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Desconecta do servidor (volta à tela de conexão). Mantém o device_uuid
-  /// e a autorização local — ao reconectar, o ERP confirma o mesmo aparelho.
   Future<void> disconnect() async {
     sync.stop();
     await CredentialStore.clearSenha();
@@ -240,8 +384,8 @@ class AppState extends ChangeNotifier {
       ..biometricEnabled = false
       ..empresaId = null
       ..empresaNome = ''
+      ..cachedToken = ''
       ..clearSession();
-    // Mantém deviceApproved + deviceUuid: não pede autorização de novo.
     await config.save();
     notifyListeners();
   }
