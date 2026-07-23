@@ -11,10 +11,13 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/waiting_approval_screen.dart';
 
-/// Mantém barras do sistema padrão — modos manuais/edgeToEdge
-/// já atrapalharam o teclado no login em alguns Android.
+/// Esconde a barra de navegação do Android (voltar/home/recentes),
+/// mantendo só a barra de status no topo.
 Future<void> _aplicarModoTela() async {
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: [SystemUiOverlay.top],
+  );
 }
 
 Future<void> main() async {
