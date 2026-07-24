@@ -32,16 +32,27 @@ workflows:
           # Diagnostico: registra no log qual AGP/Flutter foi usado de fato.
           echo "----- Flutter -----"; flutter --version || true
           echo "----- AGP gerado -----"; grep -i "com.android.application" android/settings.gradle.kts || true
-      - name: Aplicar AndroidManifest (permissoes + HTTP cleartext)
+      - name: Aplicar AndroidManifest (permissoes + HTTP cleartext + FileProvider)
         script: |
           set -e
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-      - name: MainActivity com FragmentActivity (biometria)
+          mkdir -p android/app/src/main/res/xml
+          cp ci/file_paths.xml android/app/src/main/res/xml/file_paths.xml
+      - name: MainActivity (FragmentActivity + WhatsApp PDF direto)
         script: |
           set -e
-          find android -name 'MainActivity.kt' -print0 | xargs -0 sed -i '' \
-            -e 's/io\.flutter\.embedding\.android\.FlutterActivity/io.flutter.embedding.android.FlutterFragmentActivity/g' \
-            -e 's/: FlutterActivity()/: FlutterFragmentActivity()/g'
+          DEST=$(find android -name 'MainActivity.kt' | head -n 1)
+          if [ -z "$DEST" ]; then
+            echo "ERRO: MainActivity.kt nao gerado pelo flutter create"
+            exit 1
+          fi
+          # Pacote do arquivo gerado (ex.: com.unitec.unitec_forca_vendas)
+          PKG=$(dirname "$DEST" | sed -n 's|.*/kotlin/\(.*\)|\1|p' | tr '/' '.')
+          cp ci/MainActivity.kt "$DEST"
+          if [ -n "$PKG" ]; then
+            sed -i '' "1s/^package .*/package $PKG/" "$DEST"
+          fi
+          echo "MainActivity instalado em $DEST (package $PKG)"
       - name: Configurar assinatura de release (chave estavel)
         script: |
           set -e

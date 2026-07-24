@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../db/local_db.dart';
+import '../platform/whatsapp_direct.dart';
 import '../ui/pedido_envio_dialog.dart';
 import '../ui/phone_formatter.dart';
 import 'pedido_pdf.dart';
@@ -160,9 +161,10 @@ class PedidoDocumentActions {
     }
   }
 
-  /// Gera o PDF e abre o compartilhar do sistema (WhatsApp recebe o arquivo).
+  /// Gera o PDF e envia pelo WhatsApp.
   ///
-  /// Nota: `wa.me` só envia texto — por isso o PDF precisa ir via Share sheet.
+  /// No Android tenta abrir direto no chat do número (Intent + jid).
+  /// Se falhar (sem WhatsApp / iOS), cai na folha de compartilhar do sistema.
   static Future<void> enviarWhatsApp(
     BuildContext context,
     String uuid, {
@@ -188,8 +190,20 @@ class PedidoDocumentActions {
     final file = await _writeTempPdf(order);
     if (!context.mounted) return;
 
+    if (await _enviarWhatsAppDireto(
+      context,
+      phoneE164: digits,
+      file: file,
+      text: text,
+      telefoneFmt: BrPhoneInputFormatter.format(telefone),
+    )) {
+      return;
+    }
+
+    // Fallback: Share sheet (iOS ou Android sem WhatsApp / MethodChannel).
     final telefoneFmt = BrPhoneInputFormatter.format(telefone);
     await Clipboard.setData(ClipboardData(text: _digitsPhone(telefoneFmt)));
+    if (!context.mounted) return;
     _snack(
       context,
       'Número $telefoneFmt copiado. Escolha WhatsApp e envie o PDF ao contato.',
@@ -202,6 +216,32 @@ class PedidoDocumentActions {
       text: text,
       subject: assuntoEmail(order),
     );
+  }
+
+  /// Android: Intent ACTION_SEND no pacote WhatsApp com extra `jid` do número.
+  /// Retorna true se o envio direto foi disparado com sucesso.
+  static Future<bool> _enviarWhatsAppDireto(
+    BuildContext context, {
+    required String phoneE164,
+    required File file,
+    required String text,
+    required String telefoneFmt,
+  }) async {
+    if (!WhatsAppDirect.isAndroid) return false;
+    if (!await file.exists() || await file.length() == 0) return false;
+    if (!await WhatsAppDirect.isAvailable()) return false;
+
+    final shared = await WhatsAppDirect.sharePdf(
+      phoneE164: phoneE164,
+      filePath: file.path,
+      text: text,
+    );
+    if (!shared) return false;
+
+    if (context.mounted) {
+      _snack(context, 'Abrindo WhatsApp de $telefoneFmt…');
+    }
+    return true;
   }
 
   /// Abre o compartilhar com o PDF (mailto não anexa arquivo).
