@@ -21,6 +21,14 @@ class ApiException implements Exception {
       message.toLowerCase().contains('aguardando autorização') ||
       message.toLowerCase().contains('não identificado');
 
+  bool get isPixIndisponivel =>
+      code == 'pix_desabilitado' ||
+      code == 'pix_erro' ||
+      (message.toLowerCase().contains('pix') &&
+          (message.toLowerCase().contains('desabilit') ||
+              message.toLowerCase().contains('não configur') ||
+              message.toLowerCase().contains('nao configur')));
+
   @override
   String toString() => message;
 }

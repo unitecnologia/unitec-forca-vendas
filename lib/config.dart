@@ -18,7 +18,9 @@ class AppConfig {
     this.userName = '',
     this.vendedorId,
     this.vendedorNome = '',
+    this.caixaId,
     this.caixaNome = '',
+    this.pixApiHabilitada = false,
     this.estoqueNome = '',
     this.tabelaVendaId,
     this.tabelaVendaCodigo = '',
@@ -47,7 +49,9 @@ class AppConfig {
   String userName;
   int? vendedorId;
   String vendedorNome;
+  int? caixaId;
   String caixaNome;
+  bool pixApiHabilitada;
   String estoqueNome;
   int? tabelaVendaId;
   String tabelaVendaCodigo;
@@ -88,7 +92,9 @@ class AppConfig {
         'userName': userName,
         'vendedorId': vendedorId,
         'vendedorNome': vendedorNome,
+        'caixaId': caixaId,
         'caixaNome': caixaNome,
+        'pixApiHabilitada': pixApiHabilitada,
         'estoqueNome': estoqueNome,
         'tabelaVendaId': tabelaVendaId,
         'tabelaVendaCodigo': tabelaVendaCodigo,
@@ -115,7 +121,9 @@ class AppConfig {
         userName: j['userName'] ?? '',
         vendedorId: j['vendedorId'],
         vendedorNome: j['vendedorNome'] ?? '',
+        caixaId: j['caixaId'] is int ? j['caixaId'] as int : int.tryParse('${j['caixaId'] ?? ''}'),
         caixaNome: j['caixaNome'] ?? '',
+        pixApiHabilitada: j['pixApiHabilitada'] == true,
         estoqueNome: j['estoqueNome'] ?? '',
         tabelaVendaId: j['tabelaVendaId'],
         tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
@@ -155,7 +163,9 @@ class AppConfig {
     if (!rememberUser) {
       vendedorId = null;
       vendedorNome = '';
+      caixaId = null;
       caixaNome = '';
+      pixApiHabilitada = false;
       estoqueNome = '';
       tabelaVendaId = null;
       tabelaVendaCodigo = '';

@@ -323,8 +323,23 @@ class _TitulosScreenState extends State<TitulosScreen> {
           );
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString();
+      final desabilitado = msg.toLowerCase().contains('desabilitad');
+      if (desabilitado) {
+        final cfg = context.read<AppState>().config;
+        if (cfg.pixApiHabilitada) {
+          cfg.pixApiHabilitada = false;
+          await cfg.save();
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível gerar o Pix: $e')),
+        SnackBar(
+          content: Text(
+            desabilitado
+                ? 'API PIX desabilitada no ERP. Título não foi alterado.'
+                : 'Não foi possível gerar o Pix: $msg',
+          ),
+        ),
       );
       return;
     }

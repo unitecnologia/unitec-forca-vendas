@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../api/api_client.dart';
 import '../app_state.dart';
 import '../db/local_db.dart';
 import '../documents/pedido_document_actions.dart';
@@ -812,9 +813,21 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
     if (!await _confirmarCreditoCliente()) return;
 
-    // Pedido pago no Pix: gera a cobrança e só persiste após confirmar.
+    // Pedido pago no Pix: tenta QR só se a API PIX estiver habilitada no ERP.
     if (_tipo == 'pedido' && _isFormaPix()) {
-      final syncStatus = context.read<AppState>().sync.status;
+      final state = context.read<AppState>();
+      if (!state.config.pixApiHabilitada) {
+        await _persistirPedido(uuid: const Uuid().v4());
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('API PIX desabilitada no ERP. Pedido salvo normalmente.'),
+            ),
+          );
+        }
+        return;
+      }
+      final syncStatus = state.sync.status;
       if (syncStatus == SyncStatus.offline) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -832,7 +845,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   /// Gera a cobrança Pix, abre o QR e — se pago — persiste/envia o pedido.
-  /// Se falhar/expirar, o pedido continua na tela para o vendedor decidir.
+  /// Se a API falhar, grava o pedido normalmente (sem travar o vendedor).
   Future<void> _fluxoPix() async {
     setState(() => _salvando = true);
     final uuid = const Uuid().v4();
@@ -848,8 +861,23 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() => _salvando = false);
+      // Qualquer erro de PIX (desabilitado, token, rede…): grava o pedido.
+      final msg = e is ApiException ? e.message : e.toString();
+      final code = e is ApiException ? e.code : null;
+      if (code == 'pix_desabilitado' ||
+          msg.toLowerCase().contains('desabilitad')) {
+        final cfg = context.read<AppState>().config;
+        if (cfg.pixApiHabilitada) {
+          cfg.pixApiHabilitada = false;
+          await cfg.save();
+        }
+      }
+      await _persistirPedido(uuid: uuid);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível gerar o Pix: $e')),
+        SnackBar(
+          content: Text('Pix indisponível. Pedido salvo normalmente.'),
+        ),
       );
       return;
     }
@@ -897,6 +925,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'percentual_desconto': _parseNum(_descPct.text),
       'forma_pagamento': _forma,
       'forma_pagamento_id': _formaId,
+      'caixa_id': context.read<AppState>().config.caixaId,
+      'caixa_nome': context.read<AppState>().config.caixaNome,
       'tabela_prazo_id': _tabelaPrazoId,
       'tabela_prazo_dias': _tabelaDias,
       'condicao_pagamento': _condicao.text.trim(),
@@ -1491,10 +1521,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     onPressed: _salvando ? null : _salvar,
                     icon: _salvando
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Icon(_tipo == 'pedido' && _isFormaPix() ? Icons.qr_code_2 : Icons.save_outlined),
+                        : Icon(_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
+                            ? Icons.qr_code_2
+                            : Icons.save_outlined),
                     label: Text(_salvando
                         ? 'Salvando...'
-                        : (_tipo == 'pedido' && _isFormaPix() ? 'Gerar Pix' : 'Salvar')),
+                        : (_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
+                            ? 'Gerar Pix'
+                            : 'Salvar')),
                     style: FilledButton.styleFrom(backgroundColor: Brand.green),
                   ),
                 ],

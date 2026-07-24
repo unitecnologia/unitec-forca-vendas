@@ -118,6 +118,16 @@ class SyncService extends ChangeNotifier {
     final cli = (data['customers'] as List?)?.length ?? 0;
     AppLog.instance.info('sync', 'Catálogo atualizado (produtos: $prod, clientes: $cli)');
 
+    final meta = data['meta'];
+    if (meta is Map) {
+      final pixOn = meta['pix_api_habilitada'] == true;
+      if (config.pixApiHabilitada != pixOn) {
+        config.pixApiHabilitada = pixOn;
+        await config.save();
+        AppLog.instance.info('sync', 'API PIX ${pixOn ? 'habilitada' : 'desabilitada'} (meta do pull)');
+      }
+    }
+
     await _db.upsertAll('products', data['products'] ?? [], (r) => {
           'id': r['id'],
           'codigo': r['codigo'],
@@ -346,6 +356,8 @@ class SyncService extends ChangeNotifier {
         'percentual_desconto': extra['percentual_desconto'] ?? 0,
         'forma_pagamento': extra['forma_pagamento'],
         'forma_pagamento_id': extra['forma_pagamento_id'],
+        'caixa_id': extra['caixa_id'],
+        'caixa_nome': extra['caixa_nome'],
         'tabela_prazo_id': extra['tabela_prazo_id'],
         'tabela_prazo_dias': extra['tabela_prazo_dias'],
         'condicao_pagamento': extra['condicao_pagamento'],

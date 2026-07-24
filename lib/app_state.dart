@@ -302,7 +302,11 @@ class AppState extends ChangeNotifier {
       config.userName = (user['name'] ?? '').toString();
       config.vendedorId = user['vendedor_id'];
       config.vendedorNome = (user['vendedor_nome'] ?? '').toString();
+      config.caixaId = user['caixa_id'] is int
+          ? user['caixa_id'] as int
+          : int.tryParse('${user['caixa_id'] ?? ''}');
       config.caixaNome = (user['caixa_nome'] ?? '').toString();
+      config.pixApiHabilitada = user['pix_api_habilitada'] == true;
       config.estoqueNome = (user['estoque_nome'] ?? '').toString();
       config.tabelaVendaId = user['tabela_venda_id'] is int
           ? user['tabela_venda_id'] as int
