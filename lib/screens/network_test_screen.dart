@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../app_state.dart';
+import '../config/erp_url.dart';
 import '../log/app_log.dart';
 import '../net/discovery.dart';
 import 'log_screen.dart';
@@ -88,15 +89,7 @@ class _NetworkTestScreenState extends State<NetworkTestScreen> {
     }
   }
 
-  String _normalizar(String input) {
-    var s = input.trim();
-    if (s.isEmpty) return s;
-    if (!s.startsWith('http://') && !s.startsWith('https://')) s = 'http://$s';
-    s = s.replaceAll(RegExp(r'/+$'), '');
-    final uri = Uri.tryParse(s);
-    if (uri != null && !uri.hasPort) s = '${uri.scheme}://${uri.host}:8765';
-    return s;
-  }
+  String _normalizar(String input) => ErpUrl.normalize(input);
 
   Future<void> _testarEndereco() async {
     final url = _normalizar(_ipCtrl.text);

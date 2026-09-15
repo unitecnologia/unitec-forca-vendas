@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import 'api/api_client.dart';
 import 'auth/credential_store.dart';
 import 'config.dart';
+import 'config/erp_url.dart';
 import 'log/app_log.dart';
 import 'sync/sync_service.dart';
 
@@ -112,17 +113,7 @@ class AppState extends ChangeNotifier {
   }
 
   String _normalizarUrl(String input, {int defaultPort = 8765}) {
-    var s = input.trim();
-    if (s.isEmpty) return s;
-    if (!s.startsWith('http://') && !s.startsWith('https://')) {
-      s = 'http://$s';
-    }
-    s = s.replaceAll(RegExp(r'/+$'), '');
-    final uri = Uri.tryParse(s);
-    if (uri != null && !uri.hasPort) {
-      s = '${uri.scheme}://${uri.host}:$defaultPort';
-    }
-    return s;
+    return ErpUrl.normalize(input, defaultPort: defaultPort);
   }
 
   /// Conecta a um endereço (IP/porta) digitado manualmente.
