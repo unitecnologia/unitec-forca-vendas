@@ -19,7 +19,7 @@ class LocalDb {
     final path = p.join(dir, 'unitec_fv.db');
     return openDatabase(
       path,
-      version: 16,
+      version: 17,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(_createOutboxCustomersSql);
@@ -79,6 +79,11 @@ class LocalDb {
           await db.execute(_createTransportadorasSql);
           // Força pull completo na próxima sync para popular transportadoras.
           await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
+        }
+        if (oldVersion < 17) {
+          await db.execute(
+            'ALTER TABLE formas_pagamento ADD COLUMN tipo_movimento TEXT',
+          );
         }
       },
       onCreate: (db, _) async {
@@ -195,6 +200,7 @@ class LocalDb {
           CREATE TABLE IF NOT EXISTS formas_pagamento (
             id INTEGER PRIMARY KEY,
             codigo INTEGER, descricao TEXT, tipo TEXT,
+            tipo_movimento TEXT,
             nfce INTEGER, max_parcelas INTEGER,
             tabelas_json TEXT   -- [{id, dias, ordem}, ...]
           )''';

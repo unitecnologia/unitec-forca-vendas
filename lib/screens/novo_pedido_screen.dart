@@ -82,6 +82,7 @@ class NovoPedidoScreen extends StatefulWidget {
     this.tipoInicial = 'pedido',
     this.documentoUuid,
     this.converterParaPedido = false,
+    this.somenteLeitura = false,
   });
 
   /// Cliente pré-selecionado (ex.: ao iniciar o pedido pela tela de Clientes).
@@ -97,6 +98,9 @@ class NovoPedidoScreen extends StatefulWidget {
   /// Se true, abre o documento como pedido (conversão de orçamento).
   final bool converterParaPedido;
 
+  /// Abre o documento completo só para consulta (sem alterar/salvar).
+  final bool somenteLeitura;
+
   @override
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
 }
@@ -106,6 +110,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   final _db = LocalDb.instance;
 
   late final TabController _tabController;
+
+  bool get _somenteLeitura => widget.somenteLeitura;
 
   Map<String, dynamic>? _cliente;
   final List<_ItemPedido> _itens = [];
@@ -588,9 +594,10 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     _recalcDescontoDeValor();
   }
 
-  Widget _stepBtnPedido(IconData icon, VoidCallback onTap) {
+  Widget _stepBtnPedido(IconData icon, VoidCallback? onTap) {
+    final enabled = onTap != null;
     return Material(
-      color: Brand.blue.withValues(alpha: 0.1),
+      color: Brand.blue.withValues(alpha: enabled ? 0.1 : 0.05),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -598,7 +605,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         child: SizedBox(
           width: 34,
           height: 42,
-          child: Icon(icon, size: 18, color: Brand.blue),
+          child: Icon(icon, size: 18, color: enabled ? Brand.blue : const Color(0xFF94A3B8)),
         ),
       ),
     );
@@ -611,14 +618,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     required VoidCallback onPlus,
     required ValueChanged<String> onChanged,
     String? suffix,
+    bool enabled = true,
   }) {
     return Row(
       children: [
-        _stepBtnPedido(Icons.remove_rounded, onMinus),
+        _stepBtnPedido(Icons.remove_rounded, enabled ? onMinus : null),
         const SizedBox(width: 4),
         Expanded(
           child: TextField(
             controller: controller,
+            enabled: enabled,
+            readOnly: !enabled,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700),
@@ -627,29 +637,34 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               suffixText: suffix,
               isDense: true,
               filled: true,
-              fillColor: Colors.white,
+              fillColor: enabled ? Colors.white : const Color(0xFFF8FAFC),
               contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
               ),
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: Brand.blue, width: 1.4),
               ),
             ),
-            onChanged: onChanged,
+            onChanged: enabled ? onChanged : null,
           ),
         ),
         const SizedBox(width: 4),
-        _stepBtnPedido(Icons.add_rounded, onPlus),
+        _stepBtnPedido(Icons.add_rounded, enabled ? onPlus : null),
       ],
     );
   }
 
   // ---- Ações -------------------------------------------------------------
   Future<void> _selecionarCliente() async {
+    if (_somenteLeitura) return;
     final escolhido = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -668,6 +683,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   Future<void> _adicionarItem() async {
+    if (_somenteLeitura) return;
     if (_cliente == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecione o cliente antes de adicionar itens.')),
@@ -712,6 +728,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   Future<void> _editarItem(int indice) async {
+    if (_somenteLeitura) return;
     final item = _itens[indice];
     final atualizado = await showModalBottomSheet<_ItemPedido>(
       context: context,
@@ -736,13 +753,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     });
   }
 
+  /// Só grava GPS se já estiver liberado e o serviço ativo. Não pede permissão.
   Future<(double?, double?)> _coletarGps() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return (null, null);
       }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
         return (null, null);
       }
       final pos = await Geolocator.getCurrentPosition(
@@ -804,6 +823,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   Future<void> _salvar() async {
+    if (_somenteLeitura) return;
     if (_cliente == null || _itens.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecione um cliente e ao menos um item.')),
@@ -1027,13 +1047,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   @override
   Widget build(BuildContext context) {
+    final titulo = _somenteLeitura
+        ? (_tipo == 'orcamento' ? 'Visualizar Orçamento' : 'Visualizar Pedido')
+        : (_orcamentoOrigemUuid != null && _tipo == 'pedido'
+            ? 'Pedido (do orçamento${_orcamentoOrigemNumero != null ? ' $_orcamentoOrigemNumero' : ''})'
+            : (_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'));
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(
         title: Text(
-          _orcamentoOrigemUuid != null && _tipo == 'pedido'
-              ? 'Pedido (do orçamento${_orcamentoOrigemNumero != null ? ' $_orcamentoOrigemNumero' : ''})'
-              : (_tipo == 'orcamento' ? 'Cadastro de Orçamento' : 'Cadastro de Pedido'),
+          titulo,
           style: TextStyle(fontSize: 17 + Brand.textBump01cm, fontWeight: FontWeight.w600, letterSpacing: 0.2),
         ),
         centerTitle: false,
@@ -1126,6 +1149,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           _field('Tipo de Pedido *', _dropdown<String>(
             value: _tipo,
             items: const {'pedido': '1 - Pedido', 'orcamento': '2 - Orçamento'},
+            enabled: !_somenteLeitura,
             onChanged: (v) => setState(() => _tipo = v ?? 'pedido'),
           )),
           _field('Lista de Preço', _dropdown<int?>(
@@ -1135,6 +1159,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 (l['id'] as int): '${l['codigo'] ?? ''} - ${l['descricao'] ?? ''}'.trim()
             },
             hint: 'Tabela do vendedor',
+            enabled: !_somenteLeitura,
             onChanged: (id) => setState(() {
               _listaPreco = _listaPrecoById(id);
               _listaPrecoManual = true;
@@ -1155,7 +1180,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             hint: _formas.isEmpty
                 ? 'Sincronize para carregar'
                 : (_clienteComFormaDefinida ? 'Definido no cadastro do cliente' : 'Selecione'),
-            enabled: !_clienteComFormaDefinida,
+            enabled: !_somenteLeitura && !_clienteComFormaDefinida,
             onChanged: (id) => setState(() => _aplicarForma(id)),
           )),
           if (!_avulsoOculto)
@@ -1166,7 +1191,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                         : (_tabelaPrazoId != null
                             ? 'Use o prazo/parcelamento'
                             : 'Ex.: 30,60,90'),
-                    enabled: !_avulsoBloqueado,
+                    enabled: !_somenteLeitura && !_avulsoBloqueado,
                     onChanged: (v) => setState(() {
                           if (v.trim().isNotEmpty) {
                             _tabelaPrazoId = null;
@@ -1187,7 +1212,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               hint: _clienteComTabelaDefinida
                   ? 'Definido no cadastro do cliente'
                   : 'À vista',
-              enabled: !_clienteComTabelaDefinida,
+              enabled: !_somenteLeitura && !_clienteComTabelaDefinida,
               onChanged: (id) => setState(() {
                 _tabelaPrazoId = id;
                 _tabelaDias = _tabelaById(id)?['dias']?.toString();
@@ -1209,12 +1234,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     id: _transportadoraItemLabel(t),
               },
               hint: _transportadoras.isEmpty ? 'Sincronize para carregar' : 'Selecione',
+              enabled: !_somenteLeitura,
               onChanged: (id) => setState(() => _transportadoraId = id),
             ),
           ),
           _field('Valor do Frete', _campoTexto(_frete,
               teclado: const TextInputType.numberWithOptions(decimal: true),
               prefix: 'R\$ ',
+              enabled: !_somenteLeitura,
               onChanged: (_) => setState(() {}))),
         ]),
       ],
@@ -1271,21 +1298,22 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-          child: FilledButton.icon(
-            onPressed: _adicionarItem,
-            icon: const Icon(Icons.add_rounded, size: 20),
-            label: Text('Adicionar item',
-                style: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
-            style: FilledButton.styleFrom(
-              backgroundColor: Brand.blue,
-              minimumSize: const Size.fromHeight(42),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        if (!_somenteLeitura)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: FilledButton.icon(
+              onPressed: _adicionarItem,
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: Text('Adicionar item',
+                  style: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                backgroundColor: Brand.blue,
+                minimumSize: const Size.fromHeight(42),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ),
-        ),
         Expanded(
           child: _itens.isEmpty
               ? Center(
@@ -1306,11 +1334,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     key: ValueKey('item-$i-${_itens[i].productId}-${_itens[i].quantidade}'),
                     indice: i + 1,
                     item: _itens[i],
-                    onTap: () => _editarItem(i),
-                    onRemove: () {
-                      setState(() => _itens.removeAt(i));
-                      _recalcDescontoDePct();
-                    },
+                    somenteLeitura: _somenteLeitura,
+                    onTap: _somenteLeitura ? null : () => _editarItem(i),
+                    onRemove: _somenteLeitura
+                        ? null
+                        : () {
+                            setState(() => _itens.removeAt(i));
+                            _recalcDescontoDePct();
+                          },
                   ),
                 ),
         ),
@@ -1362,6 +1393,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                   controller: _descPct,
                   label: 'Desc. %',
                   suffix: '%',
+                  enabled: !_somenteLeitura,
                   onMinus: () => _alterarDescPedidoPct(-1),
                   onPlus: () => _alterarDescPedidoPct(1),
                   onChanged: (_) => _recalcDescontoDePct(),
@@ -1372,6 +1404,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                 child: _campoDescontoStepper(
                   controller: _descValor,
                   label: 'Desc. R\$',
+                  enabled: !_somenteLeitura,
                   onMinus: () => _alterarDescPedidoValor(-1),
                   onPlus: () => _alterarDescPedidoValor(1),
                   onChanged: (_) => _recalcDescontoDeValor(),
@@ -1508,31 +1541,38 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             ),
             Transform.translate(
               offset: const Offset(0, -Brand.textBump01cm), // sobe ~0,10 cm
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _salvando ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                    label: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _salvando ? null : _salvar,
-                    icon: _salvando
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Icon(_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
-                            ? Icons.qr_code_2
-                            : Icons.save_outlined),
-                    label: Text(_salvando
-                        ? 'Salvando...'
-                        : (_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
-                            ? 'Gerar Pix'
-                            : 'Salvar')),
-                    style: FilledButton.styleFrom(backgroundColor: Brand.green),
-                  ),
-                ],
-              ),
+              child: _somenteLeitura
+                  ? FilledButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Fechar'),
+                      style: FilledButton.styleFrom(backgroundColor: Brand.blue),
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _salvando ? null : () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                          label: const Text('Cancelar'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: _salvando ? null : _salvar,
+                          icon: _salvando
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : Icon(_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
+                                  ? Icons.qr_code_2
+                                  : Icons.save_outlined),
+                          label: Text(_salvando
+                              ? 'Salvando...'
+                              : (_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
+                                  ? 'Gerar Pix'
+                                  : 'Salvar')),
+                          style: FilledButton.styleFrom(backgroundColor: Brand.green),
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -1684,7 +1724,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         _selectorBox(
           texto: 'Selecionar cliente',
           icon: Icons.person_add_alt_1_rounded,
-          onTap: _selecionarCliente,
+          onTap: _somenteLeitura ? null : _selecionarCliente,
         ),
       );
     }
@@ -1705,7 +1745,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: _selecionarCliente,
+          onTap: _somenteLeitura ? null : _selecionarCliente,
           child: Container(
             padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
             decoration: BoxDecoration(
@@ -1765,7 +1805,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                     ],
                   ),
                 ),
-                const Icon(Icons.edit_outlined, color: Color(0xFF94A3B8), size: 18),
+                if (!_somenteLeitura)
+                  const Icon(Icons.edit_outlined, color: Color(0xFF94A3B8), size: 18),
               ],
             ),
           ),
@@ -1970,7 +2011,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   Widget _selectorBox({
     required String texto,
     required IconData icon,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
     bool destaque = false,
   }) {
     return Material(
@@ -2138,14 +2179,16 @@ class _ItemListaTile extends StatelessWidget {
     super.key,
     required this.indice,
     required this.item,
-    required this.onTap,
-    required this.onRemove,
+    this.onTap,
+    this.onRemove,
+    this.somenteLeitura = false,
   });
 
   final int indice;
   final _ItemPedido item;
-  final VoidCallback onTap;
-  final VoidCallback onRemove;
+  final VoidCallback? onTap;
+  final VoidCallback? onRemove;
+  final bool somenteLeitura;
 
   String _fmtQtd(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll('.', ',');
@@ -2166,7 +2209,7 @@ class _ItemListaTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+          padding: EdgeInsets.fromLTRB(10, 10, somenteLeitura ? 10 : 4, 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2215,15 +2258,17 @@ class _ItemListaTile extends StatelessWidget {
                             decoration: TextDecoration.lineThrough)),
                 ],
               ),
-              Icon(Icons.chevron_right_rounded, size: 20, color: Colors.black.withValues(alpha: 0.25)),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                color: Colors.redAccent,
-                onPressed: onRemove,
-              ),
+              if (!somenteLeitura) ...[
+                Icon(Icons.chevron_right_rounded, size: 20, color: Colors.black.withValues(alpha: 0.25)),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  color: Colors.redAccent,
+                  onPressed: onRemove,
+                ),
+              ],
             ],
           ),
         ),

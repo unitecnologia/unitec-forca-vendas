@@ -200,6 +200,7 @@ class SyncService extends ChangeNotifier {
             'codigo': r['codigo'],
             'descricao': r['descricao'],
             'tipo': r['tipo'],
+            'tipo_movimento': r['tipo_movimento'],
             'nfce': _b(r['nfce']),
             'max_parcelas': r['max_parcelas'],
             'tabelas_json': jsonEncode(r['tabelas_prazo'] ?? []),

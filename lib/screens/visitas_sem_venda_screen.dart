@@ -77,16 +77,19 @@ class _VisitasSemVendaScreenState extends State<VisitasSemVendaScreen> {
     }
   }
 
+  /// Só grava GPS se já estiver liberado e o serviço ativo. Não pede permissão.
   Future<(double?, double?)> _coletarGps() async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      if (!await Geolocator.isLocationServiceEnabled()) {
         return (null, null);
       }
-      final pos = await Geolocator.getCurrentPosition();
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return (null, null);
+      }
+      final pos = await Geolocator.getCurrentPosition()
+          .timeout(const Duration(seconds: 8));
       return (pos.latitude, pos.longitude);
     } catch (_) {
       return (null, null);

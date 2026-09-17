@@ -283,6 +283,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
 
   void _menuDocumentos(BuildContext context, String uuid) {
     final tipoForcado = widget.tipoFiltro;
+    final ehOrcamento = tipoForcado == 'orcamento';
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -291,11 +292,34 @@ class _PedidosScreenState extends State<PedidosScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.visibility_outlined, color: Brand.blue),
+              title: Text('Visualizar',
+                  style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
+              subtitle: Text(
+                  ehOrcamento
+                      ? 'Ver orçamento completo (somente leitura)'
+                      : 'Ver pedido completo (somente leitura)',
+                  style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NovoPedidoScreen(
+                      documentoUuid: uuid,
+                      tipoInicial: ehOrcamento ? 'orcamento' : 'pedido',
+                      somenteLeitura: true,
+                    ),
+                  ),
+                );
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.picture_as_pdf_outlined, color: Brand.blue),
               title: Text('Compartilhar PDF',
                   style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
               subtitle: Text(
-                  tipoForcado == 'orcamento'
+                  ehOrcamento
                       ? 'WhatsApp, e-mail — PDF de orçamento'
                       : 'WhatsApp, e-mail, etc.',
                   style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
@@ -491,7 +515,7 @@ class _PedidoCard extends StatelessWidget {
                   if (temPdf) ...[
                     const SizedBox(width: 4),
                     IconButton(
-                      tooltip: 'PDF / imprimir',
+                      tooltip: 'Opções',
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
