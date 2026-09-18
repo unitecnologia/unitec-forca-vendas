@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -16,8 +15,8 @@ import '../ui/barcode_scan.dart';
 import '../ui/cliente_credito_check.dart';
 import '../ui/credito_alert_dialog.dart';
 import '../ui/format.dart';
+import '../ui/gps_obrigatorio.dart';
 import '../ui/pedido_envio_dialog.dart';
-import '../ui/pdv_alert_dialog.dart';
 import '../ui/produto_busca.dart';
 import '../ui/produto_list_card.dart';
 import '../ui/produto_foto_viewer.dart';
@@ -753,24 +752,17 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     });
   }
 
-  /// Só grava GPS se já estiver liberado e o serviço ativo. Não pede permissão.
-  Future<(double?, double?)> _coletarGps() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        return (null, null);
-      }
-      final permission = await Geolocator.checkPermission();
-      if (permission != LocationPermission.whileInUse &&
-          permission != LocationPermission.always) {
-        return (null, null);
-      }
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      ).timeout(const Duration(seconds: 8));
+  /// Pedido exige GPS; orçamento coleta só se já estiver liberado.
+  Future<(double?, double?)?> _resolverGps() async {
+    if (_tipo == 'pedido') {
+      final pos = await GpsObrigatorio.obter(
+        context,
+        finalidade: 'finalizar o pedido',
+      );
+      if (pos == null) return null;
       return (pos.latitude, pos.longitude);
-    } catch (_) {
-      return (null, null);
     }
+    return GpsObrigatorio.coletarOpcional();
   }
 
   String _formaTipo() => (_formaById(_formaId)?['tipo'] ?? '').toString();
@@ -831,13 +823,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       return;
     }
 
+    final gps = await _resolverGps();
+    if (gps == null) return;
+    if (!mounted) return;
+    final (lat, lng) = gps;
+
     if (!await _confirmarCreditoCliente()) return;
 
     // Pedido pago no Pix: tenta QR só se a API PIX estiver habilitada no ERP.
     if (_tipo == 'pedido' && _isFormaPix()) {
       final state = context.read<AppState>();
       if (!state.config.pixApiHabilitada) {
-        await _persistirPedido(uuid: const Uuid().v4());
+        await _persistirPedido(uuid: const Uuid().v4(), lat: lat, lng: lng);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -857,16 +854,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         );
         return;
       }
-      await _fluxoPix();
+      await _fluxoPix(lat: lat, lng: lng);
       return;
     }
 
-    await _persistirPedido(uuid: const Uuid().v4());
+    await _persistirPedido(uuid: const Uuid().v4(), lat: lat, lng: lng);
   }
 
   /// Gera a cobrança Pix, abre o QR e — se pago — persiste/envia o pedido.
   /// Se a API falhar, grava o pedido normalmente (sem travar o vendedor).
-  Future<void> _fluxoPix() async {
+  Future<void> _fluxoPix({double? lat, double? lng}) async {
     setState(() => _salvando = true);
     final uuid = const Uuid().v4();
 
@@ -892,7 +889,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           await cfg.save();
         }
       }
-      await _persistirPedido(uuid: uuid);
+      await _persistirPedido(uuid: uuid, lat: lat, lng: lng);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -912,6 +909,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     if (pago == true) {
       await _persistirPedido(
         uuid: uuid,
+        lat: lat,
+        lng: lng,
         pixExtra: {'pix_pago': true, 'pix_cobranca_id': cobranca['id']},
       );
     } else {
@@ -926,11 +925,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Future<void> _persistirPedido({
     required String uuid,
+    double? lat,
+    double? lng,
     Map<String, dynamic>? pixExtra,
   }) async {
     setState(() => _salvando = true);
 
-    final (lat, lng) = await _coletarGps();
     final itensJson = jsonEncode(_itens
         .map((i) => {
               'product_id': i.productId,

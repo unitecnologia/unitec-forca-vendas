@@ -13,6 +13,7 @@ import 'config.dart';
 import 'config/erp_url.dart';
 import 'log/app_log.dart';
 import 'sync/sync_service.dart';
+import 'ui/data_aparelho.dart';
 
 class AppState extends ChangeNotifier {
   AppState(this.config) : api = ApiClient(config) {
@@ -28,7 +29,8 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       AppLog.instance.info('conexão', 'Restaurada offline: ${config.baseUrl}');
     }
-    if (config.isLoggedIn) {
+    await verificarDataAparelho();
+    if (config.isLoggedIn && !dateBlocked) {
       sync.start();
     }
   }
@@ -36,6 +38,11 @@ class AppState extends ChangeNotifier {
   final AppConfig config;
   final ApiClient api;
   late final SyncService sync;
+
+  /// Data do aparelho divergente da última data aceita no app.
+  bool dateBlocked = false;
+  String dateBlockMessage = '';
+  String? dateBlockReferencia;
 
   bool get isConnected => config.isConnected;
   bool get isApproved => config.isApproved;
@@ -80,6 +87,7 @@ class AppState extends ChangeNotifier {
     await config.save();
     AppLog.instance.warn('conexão', 'Modo offline com $url');
     notifyListeners();
+    await verificarDataAparelho();
   }
 
   /// Garante um identificador único e um nome padrão (modelo do aparelho).
@@ -116,6 +124,57 @@ class AppState extends ChangeNotifier {
     return ErpUrl.normalize(input, defaultPort: defaultPort);
   }
 
+  /// Confere a data do aparelho (só o dia) com a última data aceita no app.
+  /// Bloqueia se a data mudou de forma inválida (relógio alterado). Sem rede.
+  Future<bool> verificarDataAparelho() async {
+    final hoje = DataAparelho.hojeLocal();
+    final ultima = config.lastKnownDate.trim();
+
+    if (ultima.isEmpty) {
+      await _aceitarData(hoje);
+      return true;
+    }
+    if (ultima == hoje) {
+      dateBlocked = false;
+      dateBlockMessage = '';
+      dateBlockReferencia = null;
+      notifyListeners();
+      return true;
+    }
+
+    // Virada natural de um dia (ontem → hoje): atualiza e libera.
+    final ultimaDt = DataAparelho.parseYmd(ultima);
+    final hojeDt = DataAparelho.parseYmd(hoje);
+    if (ultimaDt != null && hojeDt != null) {
+      final diff = hojeDt.difference(ultimaDt).inDays;
+      if (diff == 1) {
+        await _aceitarData(hoje, referencia: ultima);
+        return true;
+      }
+    }
+
+    dateBlocked = true;
+    dateBlockReferencia = ultima;
+    dateBlockMessage =
+        'A data do aparelho mudou '
+        '(última aceita no app: ${DataAparelho.formatBr(ultima)}, '
+        'agora: ${DataAparelho.formatBr(hoje)}). '
+        'Ajuste a data nas configurações do aparelho e toque em Verificar novamente.';
+    AppLog.instance.warn('data', 'Bloqueado: aparelho=$hoje ultima=$ultima');
+    notifyListeners();
+    return false;
+  }
+
+  Future<void> _aceitarData(String ymd, {String? referencia}) async {
+    final mudou = config.lastKnownDate != ymd;
+    config.lastKnownDate = ymd;
+    if (mudou) await config.save();
+    dateBlocked = false;
+    dateBlockMessage = '';
+    dateBlockReferencia = referencia;
+    notifyListeners();
+  }
+
   /// Conecta a um endereço (IP/porta) digitado manualmente.
   Future<void> connectManual(String url) async {
     final clean = _normalizarUrl(url);
@@ -130,6 +189,7 @@ class AppState extends ChangeNotifier {
     }
     AppLog.instance.ok('conexão', 'Conectado a $clean (${r.ms} ms)');
     await _applyConnection(clean);
+    await verificarDataAparelho();
   }
 
   Future<void> _applyConnection(String baseUrl) async {
@@ -143,6 +203,7 @@ class AppState extends ChangeNotifier {
   Future<void> connectFound(String baseUrl) async {
     AppLog.instance.ok('conexão', 'Servidor encontrado na rede: $baseUrl');
     await _applyConnection(baseUrl);
+    await verificarDataAparelho();
   }
 
   Future<void> setDeviceName(String name) async {

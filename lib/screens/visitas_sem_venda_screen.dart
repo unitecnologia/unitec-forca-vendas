@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -8,6 +7,7 @@ import '../db/local_db.dart';
 import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/format.dart';
+import '../ui/gps_obrigatorio.dart';
 import '../ui/uppercase_input.dart';
 
 /// Registra visita ao cliente sem venda (motivo mínimo 10 caracteres).
@@ -77,25 +77,6 @@ class _VisitasSemVendaScreenState extends State<VisitasSemVendaScreen> {
     }
   }
 
-  /// Só grava GPS se já estiver liberado e o serviço ativo. Não pede permissão.
-  Future<(double?, double?)> _coletarGps() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        return (null, null);
-      }
-      final permission = await Geolocator.checkPermission();
-      if (permission != LocationPermission.whileInUse &&
-          permission != LocationPermission.always) {
-        return (null, null);
-      }
-      final pos = await Geolocator.getCurrentPosition()
-          .timeout(const Duration(seconds: 8));
-      return (pos.latitude, pos.longitude);
-    } catch (_) {
-      return (null, null);
-    }
-  }
-
   Future<void> _salvar() async {
     if (_cliente == null) {
       _avisa('Selecione o cliente visitado.');
@@ -103,8 +84,13 @@ class _VisitasSemVendaScreenState extends State<VisitasSemVendaScreen> {
     }
     if (!_formKey.currentState!.validate()) return;
 
+    final pos = await GpsObrigatorio.obter(
+      context,
+      finalidade: 'registrar a visita',
+    );
+    if (pos == null) return;
+
     setState(() => _salvando = true);
-    final (lat, lng) = await _coletarGps();
     final agora = DateTime.now().toUtc().toIso8601String();
     final uuid = const Uuid().v4();
 
@@ -112,8 +98,8 @@ class _VisitasSemVendaScreenState extends State<VisitasSemVendaScreen> {
       'uuid': uuid,
       'cliente_id': _cliente!['id'],
       'motivo': _motivo.text.trim(),
-      'latitude': lat,
-      'longitude': lng,
+      'latitude': pos.latitude,
+      'longitude': pos.longitude,
       'created_at': agora,
       'status': 'pendente',
       'erro': null,

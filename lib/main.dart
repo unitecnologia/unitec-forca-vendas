@@ -7,6 +7,7 @@ import 'app_state.dart';
 import 'config.dart';
 import 'log/app_log.dart';
 import 'screens/connect_screen.dart';
+import 'screens/data_aparelho_bloqueada_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/waiting_approval_screen.dart';
@@ -61,7 +62,8 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
     if (state == AppLifecycleState.resumed) {
       // Não reaplica SystemChrome aqui: no Android isso costuma fechar/travar o teclado.
       WakelockPlus.enable();
-      if (widget.state.isLoggedIn) {
+      widget.state.verificarDataAparelho();
+      if (widget.state.isLoggedIn && !widget.state.dateBlocked) {
         widget.state.sync.syncNow();
       }
     }
@@ -90,6 +92,7 @@ class _Root extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    if (state.dateBlocked) return const DataAparelhoBloqueadaScreen();
     if (!state.isConnected) return const ConnectScreen();
     if (!state.isApproved) return const WaitingApprovalScreen();
     if (!state.isLoggedIn) return const LoginScreen();

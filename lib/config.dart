@@ -26,6 +26,7 @@ class AppConfig {
     this.tabelaVendaCodigo = '',
     this.tabelaVendaDescricao = '',
     this.lastSyncIso,
+    this.lastKnownDate = '',
     this.rememberUser = false,
     this.biometricEnabled = false,
     this.cachedToken = '',
@@ -57,6 +58,10 @@ class AppConfig {
   String tabelaVendaCodigo;
   String tabelaVendaDescricao;
   String? lastSyncIso;
+
+  /// Última data de calendário aceita (yyyy-MM-dd, só o dia).
+  /// Usada para detectar relógio do aparelho alterado.
+  String lastKnownDate;
 
   /// Mantém empresa/usuário após sair (preenche o login automaticamente).
   bool rememberUser;
@@ -100,6 +105,7 @@ class AppConfig {
         'tabelaVendaCodigo': tabelaVendaCodigo,
         'tabelaVendaDescricao': tabelaVendaDescricao,
         'lastSyncIso': lastSyncIso,
+        'lastKnownDate': lastKnownDate,
         'rememberUser': rememberUser,
         'biometricEnabled': biometricEnabled,
         'cachedToken': cachedToken,
@@ -129,6 +135,7 @@ class AppConfig {
         tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
         tabelaVendaDescricao: j['tabelaVendaDescricao'] ?? '',
         lastSyncIso: j['lastSyncIso'],
+        lastKnownDate: (j['lastKnownDate'] ?? '').toString(),
         rememberUser: j['rememberUser'] == true,
         biometricEnabled: j['biometricEnabled'] == true,
         cachedToken: j['cachedToken'] ?? '',
