@@ -53,6 +53,15 @@ class AppState extends ChangeNotifier {
     if (e is SocketException) return true;
     if (e is http.ClientException) return true;
     if (e is ApiException) {
+      // Cloudflare / origem fora: 502, 503, 520–530 — tratar como rede para fallback offline.
+      final code = e.statusCode;
+      if (code != null &&
+          (code == 502 ||
+              code == 503 ||
+              code == 504 ||
+              (code >= 520 && code <= 530))) {
+        return true;
+      }
       final m = e.message.toLowerCase();
       return m.contains('socket') ||
           m.contains('timed out') ||
@@ -304,6 +313,17 @@ class AppState extends ChangeNotifier {
     bool rememberUser = false,
     bool biometricEnabled = false,
   }) async {
+    // Offline-first: com senha/token em cache não consulta o ERP (só 1ª vez online).
+    final offlineOk = await _loginOffline(
+      empresaId: empresaId,
+      userId: userId,
+      senha: senha,
+      empresaNome: empresaNome,
+      rememberUser: rememberUser,
+      biometricEnabled: biometricEnabled,
+    );
+    if (offlineOk) return;
+
     try {
       final resp = await api.login(
         empresaId: empresaId,

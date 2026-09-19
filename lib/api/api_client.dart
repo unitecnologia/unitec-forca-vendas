@@ -329,6 +329,13 @@ class ApiClient {
         if (body['code'] != null) code = body['code'].toString();
       }
     } catch (_) {}
+    // Cloudflare Tunnel / origem fora (ex.: PC do cliente sem internet).
+    if (r.statusCode == 530 ||
+        r.statusCode == 502 ||
+        r.statusCode == 503 ||
+        (r.statusCode >= 520 && r.statusCode <= 529)) {
+      msg = 'Servidor indisponível (túnel/ERP fora). Use o modo offline se já tiver logado antes.';
+    }
     AppLog.instance.error('api', '${r.request?.url.path ?? ''} → HTTP ${r.statusCode}: $msg');
     throw ApiException(msg, statusCode: r.statusCode, code: code);
   }
