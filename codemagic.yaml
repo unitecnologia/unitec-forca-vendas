@@ -100,7 +100,7 @@ workflows:
           echo "versionCode=$BUILD_NUM (pubspec+$PUBSPEC_CODE, build #$BUILD_NUMBER)"
           flutter build apk --release --build-number=$BUILD_NUM
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/apk/release/Unitec-Forca-Vendas-*.apk
     publishing:
       email:
         recipients:

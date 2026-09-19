@@ -70,3 +70,11 @@ android {
 flutter {
     source = "../.."
 }
+
+android.applicationVariants.configureEach {
+    val appLabel = "Unitec-Forca-Vendas"
+    outputs.configureEach {
+        val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+        output.outputFileName = "$appLabel-${versionName}.apk"
+    }
+}
