@@ -69,17 +69,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _atualizarContadores() async {
     final db = LocalDb.instance;
-    final vendedorId = context.read<AppState>().config.vendedorId;
-    final pr = await db.count('products');
+    final config = context.read<AppState>().config;
+    final vendedorId = config.vendedorId;
+    final verTodos = config.verTodosClientes;
+    final pr = await db.query(
+      'SELECT COUNT(*) AS c FROM products WHERE ativo = 1 AND IFNULL(mostrar_no_app, 1) = 1',
+    );
     final clRows = await db.query(
-      'SELECT COUNT(*) AS c FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)}',
-      FvCarteira.args(vendedorId),
+      'SELECT COUNT(*) AS c FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, verTodos: verTodos)}',
+      FvCarteira.args(vendedorId, verTodos: verTodos),
     );
     final cl = (clRows.first['c'] as num?)?.toInt() ?? 0;
     final pe = await db.pendingCount();
     if (mounted) {
       setState(() {
-        _produtos = pr;
+        _produtos = (pr.first['c'] as num?)?.toInt() ?? 0;
         _clientes = cl;
         _pendentes = pe;
       });

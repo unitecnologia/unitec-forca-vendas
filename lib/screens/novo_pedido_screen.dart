@@ -2701,7 +2701,9 @@ class _BuscaSheetState extends State<_BuscaSheet> {
       );
     } else {
       final like = '%${_termo.trim().toUpperCase()}%';
-      final vendedorId = context.read<AppState>().config.vendedorId;
+      final config = context.read<AppState>().config;
+      final vendedorId = config.vendedorId;
+      final verTodos = config.verTodosClientes;
       if (widget.tabela == 'customers') {
         rows = await _db.query(
           "SELECT c.*, "
@@ -2709,10 +2711,10 @@ class _BuscaSheetState extends State<_BuscaSheet> {
           "  WHERE f.cliente_id = c.id AND f.saldo > 0), 0) AS total_aberto, "
           "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
           "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
-          "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id')} "
+          "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id', verTodos: verTodos)} "
           "AND (c.${widget.campoNome} LIKE ? OR c.codigo LIKE ? OR c.apelido_fantasia LIKE ? OR c.cpf_cnpj LIKE ?) "
           'ORDER BY c.${widget.campoNome} LIMIT 60',
-          [...FvCarteira.args(vendedorId), like, like, like, like],
+          [...FvCarteira.args(vendedorId, verTodos: verTodos), like, like, like, like],
         );
       } else {
         rows = await _db.query(

@@ -32,9 +32,11 @@ class _TitulosScreenState extends State<TitulosScreen> {
 
   Future<void> _carregar() async {
     final like = '%${_termo.trim()}%';
-    final vendedorId = context.read<AppState>().config.vendedorId;
-    final carteiraSql = FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id');
-    final carteiraArgs = FvCarteira.args(vendedorId);
+    final config = context.read<AppState>().config;
+    final vendedorId = config.vendedorId;
+    final verTodos = config.verTodosClientes;
+    final carteiraSql = FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id', verTodos: verTodos);
+    final carteiraArgs = FvCarteira.args(vendedorId, verTodos: verTodos);
     final rows = await _db.query(
       'SELECT f.*, c.nome_razao, c.limite_credito FROM financeiro f '
       'INNER JOIN customers c ON c.id = f.cliente_id '

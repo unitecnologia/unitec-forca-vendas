@@ -76,7 +76,7 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
     try {
       await _push().timeout(const Duration(seconds: 45));
-      await _pull().timeout(const Duration(seconds: 60));
+      await _pull().timeout(const Duration(seconds: 180));
       pendingCount = await _db.pendingCount();
       lastSyncAt = DateTime.now();
       config.lastSyncIso = lastSyncAt!.toUtc().toIso8601String();
@@ -105,7 +105,8 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _pull() async {
-    final etag = await _db.getMeta('pull_etag');
+    final etagRaw = await _db.getMeta('pull_etag');
+    final etag = (etagRaw == null || etagRaw.isEmpty) ? null : etagRaw;
     final data = await api.pull(etag: etag);
     if (data == null) return; // 304 — nada mudou
 
@@ -121,14 +122,28 @@ class SyncService extends ChangeNotifier {
     final meta = data['meta'];
     if (meta is Map) {
       final pixOn = meta['pix_api_habilitada'] == true;
+      final todosClientes = meta['ver_todos_clientes'] == true;
+      var configChanged = false;
       if (config.pixApiHabilitada != pixOn) {
         config.pixApiHabilitada = pixOn;
-        await config.save();
+        configChanged = true;
         AppLog.instance.info('sync', 'API PIX ${pixOn ? 'habilitada' : 'desabilitada'} (meta do pull)');
+      }
+      if (config.verTodosClientes != todosClientes) {
+        config.verTodosClientes = todosClientes;
+        configChanged = true;
+        AppLog.instance.info(
+          'sync',
+          'Clientes: ${todosClientes ? 'todos (empresa)' : 'só carteira'}',
+        );
+      }
+      if (configChanged) {
+        await config.save();
       }
     }
 
-    await _db.upsertAll('products', data['products'] ?? [], (r) => {
+    final products = List<dynamic>.from(data['products'] ?? const []);
+    final productMapper = (Map<String, dynamic> r) => {
           'id': r['id'],
           'codigo': r['codigo'],
           'codigo_barras': r['codigo_barras'],
@@ -150,9 +165,18 @@ class SyncService extends ChangeNotifier {
           'foto_url': r['foto_url'],
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
-        });
+        };
+    if (fullPull && products.isNotEmpty) {
+      await _db.replaceProducts(products, productMapper);
+      AppLog.instance.info('sync', 'Produtos substituídos: ${products.length}');
+    } else {
+      await _db.upsertAll('products', products, productMapper);
+    }
 
-    await _db.upsertAll('customers', data['customers'] ?? [], (r) => {
+    // Pull completo: substitui clientes do servidor em transação (não deixa base pela metade).
+    // Clientes locais ainda não enviados (id < 0) são preservados.
+    final customers = List<dynamic>.from(data['customers'] ?? const []);
+    final customerMapper = (Map<String, dynamic> r) => {
           'id': r['id'],
           'codigo': r['codigo'],
           'nome_razao': r['nome_razao'],
@@ -179,7 +203,13 @@ class SyncService extends ChangeNotifier {
           'vendedor_loja_id': r['vendedor_loja_id'],
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
-        });
+        };
+    if (fullPull && customers.isNotEmpty) {
+      await _db.replaceServerCustomers(customers, customerMapper);
+      AppLog.instance.info('sync', 'Clientes substituídos: ${customers.length}');
+    } else {
+      await _db.upsertAll('customers', customers, customerMapper);
+    }
 
     // Rotas / dias de visita: substitui a lista da carteira a cada pull.
     if (data['visita_dias'] != null) {

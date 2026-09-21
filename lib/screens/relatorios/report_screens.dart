@@ -260,11 +260,12 @@ class _ClientesAtendidosReportScreenState extends State<ClientesAtendidosReportS
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final vendedorId = context.read<AppState>().config.vendedorId;
+    final config = context.read<AppState>().config;
     final rows = await ReportData.clientesAtendidos(
-      vendedorId,
+      config.vendedorId,
       inicio: _inicio,
       fim: _fim,
+      verTodos: config.verTodosClientes,
     );
     if (mounted) {
       setState(() {
@@ -546,8 +547,12 @@ class _ClientesSemCompraReportScreenState extends State<ClientesSemCompraReportS
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final vendedorId = context.read<AppState>().config.vendedorId;
-    final rows = await ReportData.clientesSemCompra(_dias, vendedorId);
+    final config = context.read<AppState>().config;
+    final rows = await ReportData.clientesSemCompra(
+      _dias,
+      config.vendedorId,
+      verTodos: config.verTodosClientes,
+    );
     if (mounted) setState(() {
       _lista = rows;
       _carregando = false;
@@ -653,8 +658,11 @@ class _ContasAbertoReportScreenState extends State<ContasAbertoReportScreen> {
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final vendedorId = context.read<AppState>().config.vendedorId;
-    final rows = await ReportData.contasAbertoCarteira(vendedorId);
+    final config = context.read<AppState>().config;
+    final rows = await ReportData.contasAbertoCarteira(
+      config.vendedorId,
+      verTodos: config.verTodosClientes,
+    );
     if (mounted) {
       setState(() {
         _lista = rows;
@@ -835,11 +843,12 @@ class _VisitasReportScreenState extends State<VisitasReportScreen> {
 
   Future<void> _carregar() async {
     setState(() => _carregando = true);
-    final vendedorId = context.read<AppState>().config.vendedorId;
+    final config = context.read<AppState>().config;
     final rows = await ReportData.visitasRealizadas(
-      vendedorId,
+      config.vendedorId,
       inicio: _inicio,
       fim: _fim,
+      verTodos: config.verTodosClientes,
     );
     if (mounted) {
       setState(() {

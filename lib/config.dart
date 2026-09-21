@@ -21,12 +21,12 @@ class AppConfig {
     this.caixaId,
     this.caixaNome = '',
     this.pixApiHabilitada = false,
+    this.verTodosClientes = false,
     this.estoqueNome = '',
     this.tabelaVendaId,
     this.tabelaVendaCodigo = '',
     this.tabelaVendaDescricao = '',
     this.lastSyncIso,
-    this.lastKnownDate = '',
     this.rememberUser = false,
     this.biometricEnabled = false,
     this.cachedToken = '',
@@ -53,15 +53,15 @@ class AppConfig {
   int? caixaId;
   String caixaNome;
   bool pixApiHabilitada;
+
+  /// Empresa liberou base aberta no Força de Vendas (todos os clientes no app).
+  bool verTodosClientes;
+
   String estoqueNome;
   int? tabelaVendaId;
   String tabelaVendaCodigo;
   String tabelaVendaDescricao;
   String? lastSyncIso;
-
-  /// Última data de calendário aceita (yyyy-MM-dd, só o dia).
-  /// Usada para detectar relógio do aparelho alterado.
-  String lastKnownDate;
 
   /// Mantém empresa/usuário após sair (preenche o login automaticamente).
   bool rememberUser;
@@ -100,12 +100,12 @@ class AppConfig {
         'caixaId': caixaId,
         'caixaNome': caixaNome,
         'pixApiHabilitada': pixApiHabilitada,
+        'verTodosClientes': verTodosClientes,
         'estoqueNome': estoqueNome,
         'tabelaVendaId': tabelaVendaId,
         'tabelaVendaCodigo': tabelaVendaCodigo,
         'tabelaVendaDescricao': tabelaVendaDescricao,
         'lastSyncIso': lastSyncIso,
-        'lastKnownDate': lastKnownDate,
         'rememberUser': rememberUser,
         'biometricEnabled': biometricEnabled,
         'cachedToken': cachedToken,
@@ -130,12 +130,12 @@ class AppConfig {
         caixaId: j['caixaId'] is int ? j['caixaId'] as int : int.tryParse('${j['caixaId'] ?? ''}'),
         caixaNome: j['caixaNome'] ?? '',
         pixApiHabilitada: j['pixApiHabilitada'] == true,
+        verTodosClientes: j['verTodosClientes'] == true,
         estoqueNome: j['estoqueNome'] ?? '',
         tabelaVendaId: j['tabelaVendaId'],
         tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
         tabelaVendaDescricao: j['tabelaVendaDescricao'] ?? '',
         lastSyncIso: j['lastSyncIso'],
-        lastKnownDate: (j['lastKnownDate'] ?? '').toString(),
         rememberUser: j['rememberUser'] == true,
         biometricEnabled: j['biometricEnabled'] == true,
         cachedToken: j['cachedToken'] ?? '',
@@ -165,6 +165,7 @@ class AppConfig {
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
   /// Com [rememberUser], empresa, usuário e vínculo do vendedor ficam para login offline.
+  /// [verTodosClientes] é regra da empresa — não zera no logout (senão a lista some até o sync).
   void clearSession() {
     token = '';
     if (!rememberUser) {

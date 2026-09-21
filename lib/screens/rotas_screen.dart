@@ -66,14 +66,16 @@ class _RotasScreenState extends State<RotasScreen> {
 
   Future<void> _buscar() async {
     setState(() => _carregando = true);
-    final vendedorId = context.read<AppState>().config.vendedorId;
+    final config = context.read<AppState>().config;
+    final vendedorId = config.vendedorId;
+    final verTodos = config.verTodosClientes;
     final rows = await _db.query(
       'SELECT c.*, v.ordem AS visita_ordem '
       'FROM customer_visita_dias v '
       'INNER JOIN customers c ON c.id = v.person_id '
-      'WHERE v.dia_semana = ? AND c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} '
+      'WHERE v.dia_semana = ? AND c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, verTodos: verTodos)} '
       'ORDER BY v.ordem ASC, c.nome_razao ASC',
-      [_diaSemana, ...FvCarteira.args(vendedorId)],
+      [_diaSemana, ...FvCarteira.args(vendedorId, verTodos: verTodos)],
     );
     final atendidos = await _db.clientesAtendidosNoDia(_dataDoDiaSelecionado());
     if (mounted) {

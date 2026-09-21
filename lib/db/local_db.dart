@@ -267,6 +267,48 @@ class LocalDb {
     await database.delete(table);
   }
 
+  /// Remove clientes vindos do servidor (id > 0), preservando pendentes locais (id < 0).
+  Future<void> deleteServerCustomers() async {
+    final database = await db;
+    await database.delete('customers', where: 'id > 0');
+  }
+
+  /// Substitui clientes do servidor de forma atômica (não zera a base se falhar no meio).
+  Future<void> replaceServerCustomers(
+    List<dynamic> rows,
+    Map<String, dynamic> Function(Map<String, dynamic>) map,
+  ) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('customers', where: 'id > 0');
+      for (final r in rows) {
+        await txn.insert(
+          'customers',
+          map(Map<String, dynamic>.from(r as Map)),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
+  /// Substitui o catálogo de produtos (remove inativos/excluídos do ERP).
+  Future<void> replaceProducts(
+    List<dynamic> rows,
+    Map<String, dynamic> Function(Map<String, dynamic>) map,
+  ) async {
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.delete('products');
+      for (final r in rows) {
+        await txn.insert(
+          'products',
+          map(Map<String, dynamic>.from(r as Map)),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
   /// Garante a tabela local de transportadoras (pedido pode abrir antes do sync).
   Future<void> ensureTransportadorasTable() async {
     final database = await db;
@@ -291,6 +333,11 @@ class LocalDb {
     final database = await db;
     await database.insert('sync_meta', {'k': k, 'v': v},
         conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> clearMeta(String k) async {
+    final database = await db;
+    await database.delete('sync_meta', where: 'k = ?', whereArgs: [k]);
   }
 
   // ---- Outbox -------------------------------------------------------------

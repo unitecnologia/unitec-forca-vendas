@@ -194,7 +194,7 @@ class ApiClient {
     try {
       await _http
           .post(_uri('auth/logout'), headers: _headers(auth: true))
-          .timeout(timeout);
+          .timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
 
@@ -206,7 +206,7 @@ class ApiClient {
           _uri('sync/pull', since != null ? {'since': since} : null),
           headers: _headers(auth: true, extra: etag != null ? {'If-None-Match': etag} : null),
         )
-        .timeout(const Duration(seconds: 40));
+          .timeout(const Duration(seconds: 120));
     if (r.statusCode == 304) return null;
     final data = _decode(r);
     data['_etag'] = r.headers['etag'];

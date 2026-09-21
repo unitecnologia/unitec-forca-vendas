@@ -335,12 +335,14 @@ class _ClienteBuscaSheetState extends State<_ClienteBuscaSheet> {
   Future<void> _buscar() async {
     setState(() => _buscando = true);
     final like = '%${widget.termo.value.trim()}%';
-    final vendedorId = context.read<AppState>().config.vendedorId;
+    final config = context.read<AppState>().config;
+    final vendedorId = config.vendedorId;
+    final verTodos = config.verTodosClientes;
     final rows = await _db.query(
-      "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId)} "
+      "SELECT * FROM customers WHERE ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, verTodos: verTodos)} "
       "AND (nome_razao LIKE ? OR apelido_fantasia LIKE ? OR codigo LIKE ? OR cpf_cnpj LIKE ?) "
       'ORDER BY nome_razao LIMIT 80',
-      [...FvCarteira.args(vendedorId), like, like, like, like],
+      [...FvCarteira.args(vendedorId, verTodos: verTodos), like, like, like, like],
     );
     if (mounted) {
       setState(() {

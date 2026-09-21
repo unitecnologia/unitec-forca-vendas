@@ -33,17 +33,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   Future<void> _buscar() async {
     final like = '%${_termo.trim()}%';
-    final vendedorId = context.read<AppState>().config.vendedorId;
+    final config = context.read<AppState>().config;
+    final vendedorId = config.vendedorId;
+    final verTodos = config.verTodosClientes;
     final rows = await _db.query(
       "SELECT c.*, "
       "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
       "  WHERE f.cliente_id = c.id AND f.saldo > 0), 0) AS total_aberto, "
       "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
       "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
-      "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id')} "
+      "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id', verTodos: verTodos)} "
       "AND (c.nome_razao LIKE ? OR c.apelido_fantasia LIKE ? OR c.codigo LIKE ? OR c.cpf_cnpj LIKE ?) "
       'ORDER BY c.nome_razao LIMIT 200',
-      [...FvCarteira.args(vendedorId), like, like, like, like],
+      [...FvCarteira.args(vendedorId, verTodos: verTodos), like, like, like, like],
     );
     if (mounted) {
       setState(() {
