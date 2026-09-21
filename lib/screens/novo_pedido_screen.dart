@@ -14,6 +14,7 @@ import '../ui/brand.dart';
 import '../ui/barcode_scan.dart';
 import '../ui/cliente_credito_check.dart';
 import '../ui/credito_alert_dialog.dart';
+import '../ui/cliente_busca.dart';
 import '../ui/format.dart';
 import '../ui/gps_obrigatorio.dart';
 import '../ui/pedido_envio_dialog.dart';
@@ -556,8 +557,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   double get _descontoPedido => _parseNum(_descValor.text);
   double get _total => (_subtotalItens - _descontoPedido + _freteValor).clamp(0.0, double.infinity).toDouble();
 
-  double _parseNum(String s) =>
-      double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+  double _parseNum(String s) => parseBrNumber(s);
 
   String _fmtInput(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
@@ -1141,9 +1141,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
       children: [
         _filialCard(empresa.isEmpty ? 'Empresa padrão' : empresa),
-        _section(icon: Icons.person_outline, titulo: 'Cliente', filhos: [
-          _clienteCard(limite: limite),
-        ]),
+        _section(
+          icon: Icons.person_outline,
+          titulo: 'Cliente',
+          trailing: _obsCliente.isEmpty
+              ? null
+              : _botaoObsClienteHeader(),
+          filhos: [
+            _clienteCard(limite: limite),
+          ],
+        ),
         _section(icon: Icons.description_outlined, titulo: 'Dados do Pedido', filhos: [
           _pedidoNumeroCard(),
           _field('Tipo de Pedido *', _dropdown<String>(
@@ -1427,7 +1434,190 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         _section(icon: Icons.calendar_month_outlined, titulo: 'Parcelas', filhos: [
           _parcelasResumo(),
         ]),
+        _section(icon: Icons.notes_outlined, titulo: 'Observações', filhos: [
+          _botaoObservacao(
+            icone: Icons.edit_note_outlined,
+            titulo: 'Obs. do pedido',
+            preenchido: _obs.text.trim().isNotEmpty,
+            onTap: _abrirObsPedido,
+          ),
+          const SizedBox(height: 4),
+        ]),
       ],
+    );
+  }
+
+  String get _obsCliente => (_cliente?['observacoes'] ?? '').toString().trim();
+
+  Widget _botaoObsClienteHeader() {
+    return Material(
+      color: Brand.blue.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: _abrirObsCliente,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.notes_outlined, size: 14, color: Brand.blue),
+              const SizedBox(width: 4),
+              Text(
+                'Obs.',
+                style: TextStyle(
+                  fontSize: 11 + Brand.textBump01cm,
+                  fontWeight: FontWeight.w700,
+                  color: Brand.blue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _botaoObservacao({
+    required IconData icone,
+    required String titulo,
+    required bool preenchido,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: preenchido ? Brand.blue.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: preenchido ? Brand.blue.withValues(alpha: 0.35) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icone, size: 20, color: Brand.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: TextStyle(
+                    fontSize: 12 + Brand.textBump01cm,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF334155),
+                  ),
+                ),
+              ),
+              if (preenchido)
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Brand.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abrirObsPedido() async {
+    final original = _obs.text;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Observações do pedido',
+          style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: _obs,
+          autofocus: !_somenteLeitura,
+          readOnly: _somenteLeitura,
+          maxLines: 6,
+          minLines: 4,
+          textCapitalization: TextCapitalization.sentences,
+          style: TextStyle(fontSize: 14 + Brand.textBump01cm),
+          decoration: InputDecoration(
+            hintText: _somenteLeitura ? 'Sem observações' : 'Digite as observações do pedido…',
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Brand.blue, width: 1.4),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _obs.text = original;
+              Navigator.pop(ctx, false);
+            },
+            child: Text(_somenteLeitura ? 'Fechar' : 'Cancelar'),
+          ),
+          if (!_somenteLeitura)
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Brand.blue),
+              onPressed: () {
+                _obs.text = _obs.text.trim();
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Salvar'),
+            ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (ok != true) {
+      _obs.text = original;
+    }
+    setState(() {});
+  }
+
+  Future<void> _abrirObsCliente() async {
+    final texto = _obsCliente;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Observações do cliente',
+          style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 280),
+          child: SingleChildScrollView(
+            child: Text(
+              texto.isEmpty ? 'Este cliente não possui observações cadastradas.' : texto,
+              style: TextStyle(
+                fontSize: 14 + Brand.textBump01cm,
+                height: 1.35,
+                color: texto.isEmpty ? const Color(0xFF94A3B8) : const Color(0xFF334155),
+                fontStyle: texto.isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Brand.blue),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1883,7 +2073,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
   }
 
-  Widget _section({required IconData icon, required String titulo, required List<Widget> filhos}) {
+  Widget _section({
+    required IconData icon,
+    required String titulo,
+    required List<Widget> filhos,
+    Widget? trailing,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
@@ -1912,6 +2107,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                           letterSpacing: 0.6,
                           color: Color(0xFF334155))),
                 ),
+                if (trailing != null) trailing,
               ],
             ),
           ),
@@ -2333,8 +2529,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     super.dispose();
   }
 
-  double _parseNum(String s) =>
-      double.tryParse(s.trim().replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
+  double _parseNum(String s) => parseBrNumber(s);
 
   double get _quantidade => _parseNum(_qtd.text).clamp(0.001, 999999.0).toDouble();
 
@@ -2373,8 +2568,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   void _syncFromValor() {
     if (_sincDesc) return;
     _sincDesc = true;
-    final valor = _parseNum(_descValor.text);
-    final pct = _bruto > 0 ? valor / _bruto * 100.0 : 0.0;
+    final valor = _parseNum(_descValor.text).clamp(0.0, _bruto).toDouble();
+    final pct = _bruto > 0 ? (valor / _bruto * 100.0).clamp(0.0, 100.0) : 0.0;
     _descPct.text = _fmtNum(pct);
     _sincDesc = false;
     setState(() {});
@@ -2605,6 +2800,7 @@ class _BuscaSheet extends StatefulWidget {
 class _BuscaSheetState extends State<_BuscaSheet> {
   final _db = LocalDb.instance;
   final _buscaCtrl = TextEditingController();
+  final _buscaFocus = FocusNode();
   List<Map<String, dynamic>> _rows = [];
   List<String> _grupos = [];
   String _termo = '';
@@ -2617,11 +2813,15 @@ class _BuscaSheetState extends State<_BuscaSheet> {
     super.initState();
     if (_isProdutos) _carregarGrupos();
     _buscar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _buscaFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _buscaCtrl.dispose();
+    _buscaFocus.dispose();
     super.dispose();
   }
 
@@ -2700,11 +2900,11 @@ class _BuscaSheetState extends State<_BuscaSheet> {
         f.args,
       );
     } else {
-      final like = '%${_termo.trim().toUpperCase()}%';
       final config = context.read<AppState>().config;
       final vendedorId = config.vendedorId;
       final verTodos = config.verTodosClientes;
       if (widget.tabela == 'customers') {
+        final f = ClienteBusca.filtro(_termo, alias: 'c.');
         rows = await _db.query(
           "SELECT c.*, "
           "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
@@ -2712,11 +2912,12 @@ class _BuscaSheetState extends State<_BuscaSheet> {
           "COALESCE((SELECT SUM(f.saldo) FROM financeiro f "
           "  WHERE f.cliente_id = c.id AND f.saldo > 0 AND f.vencimento < date('now','localtime')), 0) AS total_vencido "
           "FROM customers c WHERE c.ativo = 1 AND ${FvCarteira.sqlEquals(vendedorId, column: 'c.vendedor_fv_id', verTodos: verTodos)} "
-          "AND (c.${widget.campoNome} LIKE ? OR c.codigo LIKE ? OR c.apelido_fantasia LIKE ? OR c.cpf_cnpj LIKE ?) "
-          'ORDER BY c.${widget.campoNome} LIMIT 60',
-          [...FvCarteira.args(vendedorId, verTodos: verTodos), like, like, like, like],
+          "AND ${f.whereMatch} "
+          'ORDER BY ${f.orderBy} LIMIT 60',
+          [...FvCarteira.args(vendedorId, verTodos: verTodos), ...f.args],
         );
       } else {
+        final like = '%${_termo.trim().toUpperCase()}%';
         rows = await _db.query(
           'SELECT * FROM ${widget.tabela} WHERE ${widget.campoNome} LIKE ? OR codigo LIKE ? ORDER BY ${widget.campoNome} LIMIT 60',
           [like, like],
@@ -2801,7 +3002,8 @@ class _BuscaSheetState extends State<_BuscaSheet> {
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: TextField(
                     controller: _buscaCtrl,
-                    autofocus: false,
+                    focusNode: _buscaFocus,
+                    autofocus: true,
                     textInputAction: TextInputAction.search,
                     textCapitalization: TextCapitalization.characters,
                     inputFormatters: withUpperCase(),

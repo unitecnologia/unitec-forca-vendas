@@ -201,6 +201,7 @@ class SyncService extends ChangeNotifier {
           'price_table_id': r['price_table_id'],
           'vendedor_fv_id': r['vendedor_fv_id'],
           'vendedor_loja_id': r['vendedor_loja_id'],
+          'observacoes': r['observacoes'],
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
         };

@@ -14,6 +14,41 @@ String brMoney(num? value) {
   return '${neg ? '-' : ''}R\$ ${buf.toString()},$dec';
 }
 
+/// Converte texto numérico BR/US para double.
+///
+/// Aceita `4,00`, `4.00`, `1.234,56` e `1,234.56`. Ponto sozinho é decimal
+/// (teclado US), evitando `4.00` → `400`. Só remove milhar quando há vírgula
+/// ou mais de um ponto (`1.234,56` / `1.234.567`).
+double parseBrNumber(String? raw) {
+  var s = (raw ?? '').trim().replaceAll(RegExp(r'[^\d.,\-]'), '');
+  if (s.isEmpty || s == '-' || s == '.' || s == ',') return 0;
+
+  final neg = s.startsWith('-');
+  if (neg) s = s.substring(1);
+
+  final hasComma = s.contains(',');
+  final hasDot = s.contains('.');
+  String normalized;
+
+  if (hasComma && hasDot) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      normalized = s.replaceAll('.', '').replaceAll(',', '.');
+    } else {
+      normalized = s.replaceAll(',', '');
+    }
+  } else if (hasComma) {
+    normalized = s.replaceAll(',', '.');
+  } else if (hasDot && s.split('.').length > 2) {
+    normalized = s.replaceAll('.', '');
+  } else {
+    // Um único ponto (ou nenhum): decimal US / dígitos puros.
+    normalized = s;
+  }
+
+  final v = double.tryParse(normalized) ?? 0;
+  return neg ? -v : v;
+}
+
 /// Valor monetário sem o prefixo `R$` (ex.: `1.234,56`).
 String brMoneyShort(num? value) {
   final full = brMoney(value);

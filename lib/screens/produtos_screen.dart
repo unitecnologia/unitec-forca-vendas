@@ -184,6 +184,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
             ),
             child: TextField(
               controller: _buscaCtrl,
+              autofocus: true,
               textCapitalization: TextCapitalization.characters,
               inputFormatters: withUpperCase(),
               decoration: InputDecoration(
