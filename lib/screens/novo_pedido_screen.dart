@@ -139,6 +139,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   List<Map<String, dynamic>> _transportadoras = [];
   int? _transportadoraId;
   bool _salvando = false;
+  /// UUID estável do rascunho: nasce ao abrir a tela e é reutilizado em
+  /// Salvar / Pix / retry. Evita pedidos duplicados por toques múltiplos.
+  String _pedidoUuid = const Uuid().v4();
   bool _sincDesconto = false;
   bool _creditoLiberado = false;
   ClienteCreditoAlerta? _creditoAlerta;
@@ -263,6 +266,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       _orcamentoOrigemUuid = uuid;
       final numOrc = (doc['numero'] ?? '').toString();
       _orcamentoOrigemNumero = numOrc.isNotEmpty ? numOrc : null;
+    }
+    // Reabrir o mesmo documento: reutiliza o UUID. Converter orçamento→pedido:
+    // mantém o UUID novo gerado ao abrir a tela (pedido distinto no ERP).
+    if (!converter) {
+      _pedidoUuid = uuid;
     }
 
     final frete = (extra['frete'] as num?)?.toDouble() ?? 0;
@@ -816,6 +824,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   Future<void> _salvar() async {
     if (_somenteLeitura) return;
+    if (_salvando) return;
     if (_cliente == null || _itens.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Selecione um cliente e ao menos um item.')),
@@ -823,18 +832,26 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       return;
     }
 
+    setState(() => _salvando = true);
+
     final gps = await _resolverGps();
-    if (gps == null) return;
+    if (gps == null) {
+      if (mounted) setState(() => _salvando = false);
+      return;
+    }
     if (!mounted) return;
     final (lat, lng) = gps;
 
-    if (!await _confirmarCreditoCliente()) return;
+    if (!await _confirmarCreditoCliente()) {
+      if (mounted) setState(() => _salvando = false);
+      return;
+    }
 
     // Pedido pago no Pix: tenta QR só se a API PIX estiver habilitada no ERP.
     if (_tipo == 'pedido' && _isFormaPix()) {
       final state = context.read<AppState>();
       if (!state.config.pixApiHabilitada) {
-        await _persistirPedido(uuid: const Uuid().v4(), lat: lat, lng: lng);
+        await _persistirPedido(uuid: _pedidoUuid, lat: lat, lng: lng);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -847,6 +864,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       final syncStatus = state.sync.status;
       if (syncStatus == SyncStatus.offline) {
         if (!mounted) return;
+        setState(() => _salvando = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Pix precisa de internet. Troque a forma de pagamento ou aguarde a conexão.'),
@@ -858,14 +876,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       return;
     }
 
-    await _persistirPedido(uuid: const Uuid().v4(), lat: lat, lng: lng);
+    await _persistirPedido(uuid: _pedidoUuid, lat: lat, lng: lng);
   }
 
   /// Gera a cobrança Pix, abre o QR e — se pago — persiste/envia o pedido.
   /// Se a API falhar, grava o pedido normalmente (sem travar o vendedor).
   Future<void> _fluxoPix({double? lat, double? lng}) async {
-    setState(() => _salvando = true);
-    final uuid = const Uuid().v4();
+    final uuid = _pedidoUuid;
 
     Map<String, dynamic> cobranca;
     try {
@@ -877,7 +894,6 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _salvando = false);
       // Qualquer erro de PIX (desabilitado, token, rede…): grava o pedido.
       final msg = e is ApiException ? e.message : e.toString();
       final code = e is ApiException ? e.code : null;
@@ -929,7 +945,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     double? lng,
     Map<String, dynamic>? pixExtra,
   }) async {
-    setState(() => _salvando = true);
+    if (mounted) setState(() => _salvando = true);
 
     final itensJson = jsonEncode(_itens
         .map((i) => {
