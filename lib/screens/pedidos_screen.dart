@@ -40,7 +40,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final outbox = await _db.query(
       'SELECT o.uuid, o.numero, o.numero_pedido, o.total, o.status, o.erro, o.created_at, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
-      '$whereOutbox ORDER BY o.created_at DESC LIMIT 300',
+      '$whereOutbox ORDER BY o.created_at DESC, CAST(o.numero AS INTEGER) DESC LIMIT 300',
       args,
     );
 
@@ -49,13 +49,15 @@ class _PedidosScreenState extends State<PedidosScreen> {
       pedidosFvCache = await _db.query(
         'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, c.nome_razao '
         'FROM pedidos_fv_cache p LEFT JOIN customers c ON c.id = p.cliente_id '
-        "WHERE p.tipo = 'orcamento' ORDER BY p.created_at DESC LIMIT 500",
+        "WHERE p.tipo = 'orcamento' "
+        'ORDER BY p.created_at DESC, CAST(p.numero AS INTEGER) DESC, p.uuid DESC LIMIT 500',
       );
     } else {
       pedidosFvCache = await _db.query(
         'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, c.nome_razao '
         'FROM pedidos_fv_cache p LEFT JOIN customers c ON c.id = p.cliente_id '
-        "WHERE p.tipo IS NULL OR p.tipo = 'pedido' ORDER BY p.created_at DESC LIMIT 500",
+        "WHERE p.tipo IS NULL OR p.tipo = 'pedido' "
+        'ORDER BY p.created_at DESC, CAST(p.numero AS INTEGER) DESC, p.uuid DESC LIMIT 500',
       );
     }
 
@@ -64,14 +66,14 @@ class _PedidosScreenState extends State<PedidosScreen> {
       historico = await _db.query(
         'SELECT h.id, h.numero, h.total, h.data, h.status, c.nome_razao '
         'FROM historico_orcamentos h LEFT JOIN customers c ON c.id = h.cliente_id '
-        'ORDER BY h.data DESC LIMIT 500',
+        'ORDER BY h.data DESC, h.id DESC LIMIT 500',
       );
     } else {
       final whereHist = tipo != null ? 'WHERE h.tipo = ?' : '';
       historico = await _db.query(
         'SELECT h.numero, h.numero_orcamento, h.total, h.data, h.status, c.nome_razao '
         'FROM historico_vendas h LEFT JOIN customers c ON c.id = h.cliente_id '
-        '$whereHist ORDER BY h.data DESC LIMIT 500',
+        '$whereHist ORDER BY h.data DESC, h.numero DESC LIMIT 500',
         args,
       );
     }
@@ -138,6 +140,20 @@ class _PedidosScreenState extends State<PedidosScreen> {
     unified.sort((a, b) {
       final da = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime(1900);
       final dbt = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime(1900);
+
+      // Compara só o dia — evita data sem hora (meia-noite) perder para quem tem horário.
+      final dayA = DateTime(da.year, da.month, da.day);
+      final dayB = DateTime(dbt.year, dbt.month, dbt.day);
+      final byDay = dayB.compareTo(dayA);
+      if (byDay != 0) return byDay;
+
+      // Mesmo dia: maior DAV/número (último enviado) primeiro.
+      final na = _numeroOrdenacao(a);
+      final nb = _numeroOrdenacao(b);
+      final byNumero = nb.compareTo(na);
+      if (byNumero != 0) return byNumero;
+
+      // Empate de número: horário mais recente primeiro.
       return dbt.compareTo(da);
     });
 
@@ -147,6 +163,18 @@ class _PedidosScreenState extends State<PedidosScreen> {
         _carregando = false;
       });
     }
+  }
+
+  /// Número do documento para ordenação (DAV / orçamento).
+  static int _numeroOrdenacao(Map<String, dynamic> row) {
+    for (final key in ['numero', 'numero_pedido']) {
+      final raw = (row[key] ?? '').toString();
+      final m = RegExp(r'\d+').firstMatch(raw);
+      if (m != null) {
+        return int.tryParse(m.group(0)!) ?? 0;
+      }
+    }
+    return int.tryParse((row['orcamento_id'] ?? '').toString()) ?? 0;
   }
 
   static String _statusFromPedidoFv(Map<String, dynamic> p) {

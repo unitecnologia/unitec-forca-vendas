@@ -222,9 +222,21 @@ class _PedidoEnvioDialogState extends State<_PedidoEnvioDialog> {
                 ),
               ],
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Não enviar'),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF475569),
+                  side: const BorderSide(color: Color(0xFF94A3B8), width: 1.4),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text(
+                  'Não enviar',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+              ),
             ),
           ],
         ),
