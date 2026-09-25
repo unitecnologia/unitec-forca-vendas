@@ -12,6 +12,7 @@ import '../db/local_db.dart';
 import '../ui/brand.dart';
 import '../ui/cnpj_lookup.dart';
 import '../ui/cpf_cnpj_formatter.dart';
+import '../ui/documento_brasileiro.dart';
 import '../ui/uppercase_input.dart';
 
 /// Cadastro rápido de um novo cliente direto no aparelho.
@@ -224,12 +225,35 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
 
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final digitos = DocumentoBrasileiro.digits(_t(_cpfCnpj));
+    final formato = DocumentoBrasileiro.mensagemFormato(_t(_cpfCnpj));
+    if (formato != null) {
+      _avisa(formato);
+      return;
+    }
+
+    final vendedorId = context.read<AppState>().config.vendedorId;
+
+    if (digitos.isNotEmpty) {
+      final existente = await _db.findCustomerByDigits(digitos);
+      if (!mounted) return;
+      if (existente != null) {
+        _avisa(
+          DocumentoBrasileiro.mensagemDuplicadoComNome(
+            digitos,
+            existente['nome_razao']?.toString(),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _salvando = true);
 
     final agora = DateTime.now().toIso8601String();
     final localId = _db.newLocalId();
     final limite = double.tryParse(_t(_limite).replaceAll('.', '').replaceAll(',', '.')) ?? 0.0;
-    final vendedorId = context.read<AppState>().config.vendedorId;
     final visitaDias = (_visitaDias.toList()..sort());
 
     final row = <String, dynamic>{
@@ -487,6 +511,7 @@ class _NovoClienteScreenState extends State<NovoClienteScreen> {
               keyboardType: TextInputType.number,
               inputFormatters: [CpfCnpjInputFormatter()],
               onFieldSubmitted: (_) => _pesquisarCnpj(),
+              validator: (v) => DocumentoBrasileiro.mensagemFormato(v),
               decoration: _deco(
                 'CPF / CNPJ',
                 helper: 'CNPJ: Pesquisar busca na Receita',

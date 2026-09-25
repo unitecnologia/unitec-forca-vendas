@@ -1,6 +1,8 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import 'customer_digits_migration.dart';
+
 /// Banco local SQLite (offline-first). Catálogo é read-only (pull);
 /// pedidos ficam numa fila (outbox) até subirem no push.
 class LocalDb {
@@ -14,82 +16,90 @@ class LocalDb {
     return _db!;
   }
 
-  Future<Database> _open() async {
-    final dir = await getDatabasesPath();
-    final path = p.join(dir, 'unitec_fv.db');
+  /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
+  static Future<Database> openAtPath(String path, {int version = 19}) {
     return openDatabase(
       path,
-      version: 18,
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute(_createOutboxCustomersSql);
-        }
-        if (oldVersion < 3) {
-          await db.execute('ALTER TABLE outbox_orders ADD COLUMN extra_json TEXT');
-        }
-        if (oldVersion < 4) {
-          await db.execute(_createFormasPagamentoSql);
-          await db.execute('ALTER TABLE customers ADD COLUMN forma_pagamento_id INTEGER');
-          await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_id INTEGER');
-          await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_dias TEXT');
-        }
-        if (oldVersion < 5) {
-          await db.execute(_createHistoricoOrcamentosSql);
-        }
-        if (oldVersion < 6) {
-          await db.execute(_createVisitasSemVendaSql);
-        }
-        if (oldVersion < 7) {
-          await db.execute('ALTER TABLE products ADD COLUMN estoque_reservado REAL DEFAULT 0');
-          await db.execute('ALTER TABLE products ADD COLUMN estoque_disponivel REAL');
-          await db.execute(
-            'UPDATE products SET estoque_disponivel = estoque, estoque_reservado = 0 '
-            'WHERE estoque_disponivel IS NULL',
-          );
-        }
-        if (oldVersion < 8) {
-          await db.execute('ALTER TABLE customers ADD COLUMN vendedor_fv_id INTEGER');
-          await db.execute('ALTER TABLE customers ADD COLUMN vendedor_loja_id INTEGER');
-        }
-        if (oldVersion < 9) {
-          await db.execute('ALTER TABLE outbox_orders ADD COLUMN numero_pedido TEXT');
-          await db.execute('ALTER TABLE historico_vendas ADD COLUMN numero_orcamento TEXT');
-        }
-        if (oldVersion < 10) {
-          await db.execute(_createPedidosFvCacheSql);
-        }
-        if (oldVersion < 11) {
-          await db.execute('ALTER TABLE customers ADD COLUMN rg_ie TEXT');
-        }
-        if (oldVersion < 12) {
-          await db.execute(_createCustomerVisitaDiasSql);
-        }
-        if (oldVersion < 13) {
-          await db.execute(_createGruposSql);
-        }
-        if (oldVersion < 14) {
-          await db.execute('ALTER TABLE products ADD COLUMN preco_especial REAL DEFAULT 0');
-          await db.execute('ALTER TABLE vendedores ADD COLUMN tabela_venda_id INTEGER');
-        }
-        if (oldVersion < 15) {
-          await db.execute('ALTER TABLE customers ADD COLUMN price_table_id INTEGER');
-        }
-        if (oldVersion < 16) {
-          await db.execute('DROP TABLE IF EXISTS transportadoras');
-          await db.execute(_createTransportadorasSql);
-          // Força pull completo na próxima sync para popular transportadoras.
-          await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
-        }
-        if (oldVersion < 17) {
-          await db.execute(
-            'ALTER TABLE formas_pagamento ADD COLUMN tipo_movimento TEXT',
-          );
-        }
-        if (oldVersion < 18) {
-          await db.execute('ALTER TABLE customers ADD COLUMN observacoes TEXT');
-        }
-      },
-      onCreate: (db, _) async {
+      version: version,
+      onUpgrade: _onUpgrade,
+      onCreate: _onCreate,
+    );
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(_createOutboxCustomersSql);
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE outbox_orders ADD COLUMN extra_json TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute(_createFormasPagamentoSql);
+      await db.execute('ALTER TABLE customers ADD COLUMN forma_pagamento_id INTEGER');
+      await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_id INTEGER');
+      await db.execute('ALTER TABLE customers ADD COLUMN tabela_prazo_dias TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute(_createHistoricoOrcamentosSql);
+    }
+    if (oldVersion < 6) {
+      await db.execute(_createVisitasSemVendaSql);
+    }
+    if (oldVersion < 7) {
+      await db.execute('ALTER TABLE products ADD COLUMN estoque_reservado REAL DEFAULT 0');
+      await db.execute('ALTER TABLE products ADD COLUMN estoque_disponivel REAL');
+      await db.execute(
+        'UPDATE products SET estoque_disponivel = estoque, estoque_reservado = 0 '
+        'WHERE estoque_disponivel IS NULL',
+      );
+    }
+    if (oldVersion < 8) {
+      await db.execute('ALTER TABLE customers ADD COLUMN vendedor_fv_id INTEGER');
+      await db.execute('ALTER TABLE customers ADD COLUMN vendedor_loja_id INTEGER');
+    }
+    if (oldVersion < 9) {
+      await db.execute('ALTER TABLE outbox_orders ADD COLUMN numero_pedido TEXT');
+      await db.execute('ALTER TABLE historico_vendas ADD COLUMN numero_orcamento TEXT');
+    }
+    if (oldVersion < 10) {
+      await db.execute(_createPedidosFvCacheSql);
+    }
+    if (oldVersion < 11) {
+      await db.execute('ALTER TABLE customers ADD COLUMN rg_ie TEXT');
+    }
+    if (oldVersion < 12) {
+      await db.execute(_createCustomerVisitaDiasSql);
+    }
+    if (oldVersion < 13) {
+      await db.execute(_createGruposSql);
+    }
+    if (oldVersion < 14) {
+      await db.execute('ALTER TABLE products ADD COLUMN preco_especial REAL DEFAULT 0');
+      await db.execute('ALTER TABLE vendedores ADD COLUMN tabela_venda_id INTEGER');
+    }
+    if (oldVersion < 15) {
+      await db.execute('ALTER TABLE customers ADD COLUMN price_table_id INTEGER');
+    }
+    if (oldVersion < 16) {
+      await db.execute('DROP TABLE IF EXISTS transportadoras');
+      await db.execute(_createTransportadorasSql);
+      // Força pull completo na próxima sync para popular transportadoras.
+      await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
+    }
+    if (oldVersion < 17) {
+      await db.execute(
+        'ALTER TABLE formas_pagamento ADD COLUMN tipo_movimento TEXT',
+      );
+    }
+    if (oldVersion < 18) {
+      await db.execute('ALTER TABLE customers ADD COLUMN observacoes TEXT');
+    }
+    if (oldVersion < 19) {
+      await migrateCustomersCpfCnpjDigits(db);
+    }
+  }
+
+  static Future<void> _onCreate(Database db, int version) async {
         await db.execute('''
           CREATE TABLE products (
             id INTEGER PRIMARY KEY,
@@ -104,7 +114,7 @@ class LocalDb {
         await db.execute('''
           CREATE TABLE customers (
             id INTEGER PRIMARY KEY,
-            codigo TEXT, nome_razao TEXT, apelido_fantasia TEXT, cpf_cnpj TEXT, rg_ie TEXT,
+            codigo TEXT, nome_razao TEXT, apelido_fantasia TEXT, cpf_cnpj TEXT, cpf_cnpj_digits TEXT, rg_ie TEXT,
             endereco TEXT, numero TEXT, bairro TEXT, cidade_nome TEXT, uf TEXT, cep TEXT,
             email TEXT, fone1 TEXT, celular1 TEXT, whatsapp TEXT,
             limite_credito REAL, dia_pgto INTEGER,
@@ -114,6 +124,7 @@ class LocalDb {
             observacoes TEXT,
             ativo INTEGER, updated_at TEXT
           )''');
+        await createCustomersCpfCnpjDigitsUniqueIndex(db);
         await db.execute('''
           CREATE TABLE price_tables (
             id INTEGER PRIMARY KEY, codigo TEXT, descricao TEXT, ativo INTEGER, updated_at TEXT
@@ -161,8 +172,12 @@ class LocalDb {
         await db.execute(_createTransportadorasSql);
         await db.execute(_createVisitasSemVendaSql);
         await db.execute(_createPedidosFvCacheSql);
-      },
-    );
+  }
+
+  Future<Database> _open() async {
+    final dir = await getDatabasesPath();
+    final path = p.join(dir, 'unitec_fv.db');
+    return openAtPath(path);
   }
 
   static const String _createPedidosFvCacheSql = '''
@@ -255,8 +270,11 @@ class LocalDb {
     final database = await db;
     final batch = database.batch();
     for (final r in rows) {
-      batch.insert(table, map(Map<String, dynamic>.from(r as Map)),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      var mapped = map(Map<String, dynamic>.from(r as Map));
+      if (table == 'customers') {
+        mapped = prepareCustomerRow(mapped);
+      }
+      batch.insert(table, mapped, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -288,7 +306,7 @@ class LocalDb {
       for (final r in rows) {
         await txn.insert(
           'customers',
-          map(Map<String, dynamic>.from(r as Map)),
+          prepareCustomerRow(map(Map<String, dynamic>.from(r as Map))),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
@@ -505,8 +523,21 @@ class LocalDb {
   /// Insere/atualiza um cliente na base local (visível na lista e nos pedidos).
   Future<void> upsertCustomer(Map<String, dynamic> row) async {
     final database = await db;
-    await database.insert('customers', row,
+    await database.insert('customers', prepareCustomerRow(row),
         conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Lookup indexado por dígitos (unicidade offline). Vazio → null.
+  Future<Map<String, dynamic>?> findCustomerByDigits(String digits) async {
+    if (digits.isEmpty) return null;
+    final database = await db;
+    final rows = await database.query(
+      'customers',
+      where: 'cpf_cnpj_digits = ?',
+      whereArgs: [digits],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
   }
 
   /// Substitui os dias de visita locais do cliente (1=Seg … 7=Dom).
@@ -576,8 +607,9 @@ class LocalDb {
     final database = await db;
     await database.transaction((txn) async {
       await txn.delete('customers', where: 'id = ?', whereArgs: [localId]);
-      final mapped = Map<String, dynamic>.from(row)
-        ..remove('visita_dias');
+      final mapped = prepareCustomerRow(
+        Map<String, dynamic>.from(row)..remove('visita_dias'),
+      );
       mapped['id'] = serverId;
       await txn.insert('customers', mapped, conflictAlgorithm: ConflictAlgorithm.replace);
 
@@ -593,6 +625,31 @@ class LocalDb {
         where: 'cliente_id = ?',
         whereArgs: [localId],
       );
+
+      // Mesma regra da migration: não violar PK (person_id, dia_semana).
+      final keeperDays = await txn.query(
+        'customer_visita_dias',
+        columns: ['dia_semana'],
+        where: 'person_id = ?',
+        whereArgs: [serverId],
+      );
+      final keepSet = keeperDays.map((r) => r['dia_semana'] as int).toSet();
+      final loserDays = await txn.query(
+        'customer_visita_dias',
+        columns: ['dia_semana'],
+        where: 'person_id = ?',
+        whereArgs: [localId],
+      );
+      for (final dayRow in loserDays) {
+        final dia = dayRow['dia_semana'] as int;
+        if (keepSet.contains(dia)) {
+          await txn.delete(
+            'customer_visita_dias',
+            where: 'person_id = ? AND dia_semana = ?',
+            whereArgs: [localId, dia],
+          );
+        }
+      }
       await txn.update(
         'customer_visita_dias',
         {'person_id': serverId},
