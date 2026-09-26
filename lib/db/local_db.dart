@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import 'customer_digits_migration.dart';
 
@@ -17,7 +20,7 @@ class LocalDb {
   }
 
   /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
-  static Future<Database> openAtPath(String path, {int version = 19}) {
+  static Future<Database> openAtPath(String path, {int version = 20}) {
     return openDatabase(
       path,
       version: version,
@@ -97,6 +100,16 @@ class LocalDb {
     if (oldVersion < 19) {
       await migrateCustomersCpfCnpjDigits(db);
     }
+    if (oldVersion < 20) {
+      await db.execute(_createOutboxCustomerUpdatesSql);
+    }
+  }
+
+  /// Instância isolada (testes). Não usa o banco do aparelho.
+  static Future<LocalDb> openForTest(String path) async {
+    final local = LocalDb._();
+    local._db = await openAtPath(path);
+    return local;
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -168,6 +181,7 @@ class LocalDb {
         await db.execute('''
           CREATE TABLE sync_meta ( k TEXT PRIMARY KEY, v TEXT )''');
         await db.execute(_createOutboxCustomersSql);
+        await db.execute(_createOutboxCustomerUpdatesSql);
         await db.execute(_createFormasPagamentoSql);
         await db.execute(_createTransportadorasSql);
         await db.execute(_createVisitasSemVendaSql);
@@ -244,6 +258,18 @@ class LocalDb {
             status TEXT,        -- pendente | enviado | erro
             erro TEXT,
             server_id INTEGER
+          )''';
+
+  /// Alteração parcial de cliente já existente no ERP (hoje: só e-mail).
+  static const String _createOutboxCustomerUpdatesSql = '''
+          CREATE TABLE IF NOT EXISTS outbox_customer_updates (
+            uuid TEXT PRIMARY KEY,
+            person_id INTEGER NOT NULL,
+            campo TEXT NOT NULL,
+            valor TEXT,
+            created_at TEXT,
+            status TEXT,
+            erro TEXT
           )''';
 
   static const String _createCustomerVisitaDiasSql = '''
@@ -512,7 +538,11 @@ class LocalDb {
         .rawQuery("SELECT COUNT(*) c FROM outbox_orders WHERE status IN ('pendente', 'financeiro')");
     final customers = await database
         .rawQuery("SELECT COUNT(*) c FROM outbox_customers WHERE status = 'pendente'");
-    return ((orders.first['c'] as int?) ?? 0) + ((customers.first['c'] as int?) ?? 0);
+    final updates = await database
+        .rawQuery("SELECT COUNT(*) c FROM outbox_customer_updates WHERE status = 'pendente'");
+    return ((orders.first['c'] as int?) ?? 0) +
+        ((customers.first['c'] as int?) ?? 0) +
+        ((updates.first['c'] as int?) ?? 0);
   }
 
   // ---- Clientes (cadastro local + fila p/ ERP) ---------------------------
@@ -556,6 +586,97 @@ class LocalDb {
         );
       }
     });
+  }
+
+  /// Grava o e-mail na ficha local e enfileira a sincronização.
+  ///
+  /// Cliente ainda não enviado (id < 0): o e-mail entra no payload do cadastro
+  /// pendente (`outbox_customers`), que o ERP já importa no campo `email`.
+  /// Cliente do ERP (id > 0): fila `outbox_customer_updates` com só esse campo.
+  Future<void> saveCustomerEmail(int id, String email) async {
+    final valor = email.trim();
+    final database = await db;
+    await database.transaction((txn) async {
+      await txn.update(
+        'customers',
+        {
+          'email': valor,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      if (id < 0) {
+        final rows = await txn.query(
+          'outbox_customers',
+          where: 'local_id = ? AND status = ?',
+          whereArgs: [id, 'pendente'],
+        );
+        for (final row in rows) {
+          final decoded = jsonDecode((row['payload_json'] as String?) ?? '{}');
+          if (decoded is! Map) continue;
+          final payload = Map<String, dynamic>.from(decoded);
+          payload['email'] = valor;
+          await txn.update(
+            'outbox_customers',
+            {'payload_json': jsonEncode(payload)},
+            where: 'uuid = ?',
+            whereArgs: [row['uuid']],
+          );
+        }
+        return;
+      }
+
+      await txn.delete(
+        'outbox_customer_updates',
+        where: "person_id = ? AND campo = 'email' AND status = 'pendente'",
+        whereArgs: [id],
+      );
+      await txn.insert('outbox_customer_updates', {
+        'uuid': const Uuid().v4(),
+        'person_id': id,
+        'campo': 'email',
+        'valor': valor,
+        'created_at': DateTime.now().toIso8601String(),
+        'status': 'pendente',
+        'erro': null,
+      });
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> pendingCustomerEmailUpdates() async {
+    final database = await db;
+    return database.query(
+      'outbox_customer_updates',
+      where: "status = ? AND campo = ?",
+      whereArgs: ['pendente', 'email'],
+      orderBy: 'created_at',
+    );
+  }
+
+  Future<void> markCustomerEmailUpdate(String uuid, String status, {String? erro}) async {
+    final database = await db;
+    await database.update(
+      'outbox_customer_updates',
+      {'status': status, 'erro': erro},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+  }
+
+  /// Depois do pull, a ficha local volta a mostrar o e-mail ainda não confirmado.
+  Future<void> reapplyPendingCustomerEmailUpdates() async {
+    final database = await db;
+    final rows = await pendingCustomerEmailUpdates();
+    for (final row in rows) {
+      await database.update(
+        'customers',
+        {'email': row['valor'] ?? ''},
+        where: 'id = ?',
+        whereArgs: [row['person_id']],
+      );
+    }
   }
 
   /// Atualiza telefones do cliente na base local.

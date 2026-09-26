@@ -13,6 +13,7 @@ import 'config.dart';
 import 'config/erp_url.dart';
 import 'db/local_db.dart';
 import 'log/app_log.dart';
+import 'pricing/item_desconto.dart';
 import 'sync/sync_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -320,6 +321,9 @@ class AppState extends ChangeNotifier {
       config.caixaNome = (user['caixa_nome'] ?? '').toString();
       config.pixApiHabilitada = user['pix_api_habilitada'] == true;
       config.verTodosClientes = user['ver_todos_clientes'] == true;
+      if (user.containsKey('desconto_reais_item_modo')) {
+        config.descontoReaisItemModo = normalizarDescontoReaisItemModo(user['desconto_reais_item_modo']);
+      }
       config.estoqueNome = (user['estoque_nome'] ?? '').toString();
       config.tabelaVendaId = user['tabela_venda_id'] is int
           ? user['tabela_venda_id'] as int
@@ -449,6 +453,7 @@ class AppState extends ChangeNotifier {
       ..empresaNome = ''
       ..cachedToken = ''
       ..verTodosClientes = false
+      ..descontoReaisItemModo = descontoReaisModoUnitario
       ..clearSession();
     await config.save();
     notifyListeners();

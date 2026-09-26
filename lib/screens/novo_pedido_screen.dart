@@ -22,6 +22,7 @@ import '../ui/produto_busca.dart';
 import '../ui/produto_list_card.dart';
 import '../ui/produto_foto_viewer.dart';
 import '../ui/uppercase_input.dart';
+import '../pricing/item_desconto.dart';
 import '../pricing/product_preco.dart';
 import 'pix_qr_screen.dart';
 
@@ -33,8 +34,12 @@ class _ItemPedido {
     required this.precoUnitario,
     double desconto = 0,
     double? descontoPercentual,
+    double? descontoUnitario,
+    bool descontoLinhaFixa = false,
   })  : _descontoValor = desconto,
-        _descontoPercentual = descontoPercentual;
+        _descontoPercentual = descontoPercentual,
+        _descontoUnitario = (descontoUnitario != null && descontoUnitario > 0) ? descontoUnitario : null,
+        _descontoLinhaFixa = descontoLinhaFixa && !(descontoUnitario != null && descontoUnitario > 0);
 
   final int productId;
   final String descricao;
@@ -44,14 +49,29 @@ class _ItemPedido {
   double? _descontoPercentual;
   double _descontoValor;
 
+  /// R$ por unidade. Nulo no modo % , no modo linha e em pedidos antigos.
+  double? _descontoUnitario;
+
+  /// R$ informado é o total da linha e não muda com a quantidade.
+  bool _descontoLinhaFixa;
+
   double get bruto => quantidade * precoUnitario;
 
-  double get desconto {
-    if (_descontoPercentual != null && _descontoPercentual! > 0) {
-      return (bruto * _descontoPercentual! / 100).clamp(0.0, bruto).toDouble();
-    }
-    return _descontoValor.clamp(0.0, bruto).toDouble();
-  }
+  bool get descontoEmReais => _descontoUnitario != null && _descontoUnitario! > 0;
+
+  bool get descontoLinhaFixa => _descontoLinhaFixa && !descontoEmReais && _descontoPercentual == null;
+
+  double? get descontoPercentual => _descontoPercentual;
+
+  double? get descontoUnitario => _descontoUnitario;
+
+  double get desconto => descontoEfetivo(
+        quantidade: quantidade,
+        precoUnitario: precoUnitario,
+        descontoPercentual: _descontoPercentual,
+        descontoUnitario: _descontoUnitario,
+        descontoValorLegado: _descontoValor,
+      );
 
   double get descontoPercentualExibicao {
     if (_descontoPercentual != null) return _descontoPercentual!;
@@ -59,20 +79,39 @@ class _ItemPedido {
     return desconto / bruto * 100;
   }
 
-  double get descontoValorExibicao => desconto;
+  /// Modo % e modo linha: total da linha. Modo R$ por unidade: valor por unidade.
+  double get descontoValorExibicao {
+    if (descontoEmReais) return _descontoUnitario!;
+    return desconto;
+  }
 
   void aplicarDescontoPercentual(double pct) {
     final p = pct.clamp(0.0, 100.0).toDouble();
     _descontoPercentual = p > 0 ? p : null;
+    _descontoUnitario = null;
+    _descontoLinhaFixa = false;
     if (p <= 0) _descontoValor = 0;
   }
 
   void aplicarDescontoValor(double valor) {
     _descontoPercentual = null;
-    _descontoValor = valor.clamp(0.0, bruto).toDouble();
+    _descontoValor = 0;
+    _descontoLinhaFixa = false;
+    _descontoUnitario = valor > 0 ? dinheiroCentavos(valor) : null;
   }
 
   double get total => bruto - desconto;
+
+  Map<String, dynamic> toJson() => mapaItemPedido(
+        productId: productId,
+        descricao: descricao,
+        quantidade: quantidade,
+        precoUnitario: precoUnitario,
+        descontoPercentual: _descontoPercentual,
+        descontoUnitario: _descontoUnitario,
+        descontoValorLegado: _descontoValor,
+        descontoLinhaFixa: descontoLinhaFixa,
+      );
 }
 
 class NovoPedidoScreen extends StatefulWidget {
@@ -243,12 +282,16 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           final m = Map<String, dynamic>.from(raw);
           final pid = _asInt(m['product_id']);
           if (pid == null) continue;
+          final unitRaw = (m['desconto_unitario'] as num?)?.toDouble();
+          final modoLinha = m['desconto_reais_modo']?.toString() == descontoReaisModoLinha;
           itens.add(_ItemPedido(
             productId: pid,
             descricao: (m['descricao'] ?? '').toString(),
             quantidade: (m['quantidade'] as num?)?.toDouble() ?? 1,
             precoUnitario: (m['preco_unitario'] as num?)?.toDouble() ?? 0,
             desconto: (m['desconto'] as num?)?.toDouble() ?? 0,
+            descontoUnitario: unitRaw != null && unitRaw > 0 ? unitRaw : null,
+            descontoLinhaFixa: modoLinha,
           ));
         }
       }
@@ -724,6 +767,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         productId: produto['id'] as int,
         produto: produto,
         listaPreco: _listaPreco,
+        descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
       ),
     );
     if (item == null) return;
@@ -749,6 +793,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         quantidadeInicial: item.quantidade,
         descontoPctInicial: item.descontoPercentualExibicao,
         descontoValorInicial: item.descontoValorExibicao,
+        descontoEmReais: item.descontoEmReais,
+        descontoLinhaFixa: item.descontoLinhaFixa,
+        descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
         confirmLabel: 'Salvar alterações',
       ),
     );
@@ -947,15 +994,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }) async {
     if (mounted) setState(() => _salvando = true);
 
-    final itensJson = jsonEncode(_itens
-        .map((i) => {
-              'product_id': i.productId,
-              'quantidade': i.quantidade,
-              'preco_unitario': i.precoUnitario,
-              'desconto': i.desconto,
-              'descricao': i.descricao,
-            })
-        .toList());
+    final itensJson = jsonEncode(_itens.map((i) => i.toJson()).toList());
 
     final extra = <String, dynamic>{
       'percentual_desconto': _parseNum(_descPct.text),
@@ -2497,6 +2536,9 @@ class _ItemFormSheet extends StatefulWidget {
     this.quantidadeInicial = 1,
     this.descontoPctInicial = 0,
     this.descontoValorInicial = 0,
+    this.descontoEmReais = false,
+    this.descontoLinhaFixa = false,
+    this.descontoReaisModo = descontoReaisModoUnitario,
     this.confirmLabel = 'Incluir item',
     this.produto,
     this.listaPreco,
@@ -2508,6 +2550,15 @@ class _ItemFormSheet extends StatefulWidget {
   final double quantidadeInicial;
   final double descontoPctInicial;
   final double descontoValorInicial;
+
+  /// true quando o R$ gravado é por unidade (não o espelho do modo %).
+  final bool descontoEmReais;
+
+  /// true quando o R$ gravado é o total fixo da linha.
+  final bool descontoLinhaFixa;
+
+  /// Parâmetro da empresa: unitario ou linha. Só vale para digitação nova em R$.
+  final String descontoReaisModo;
   final String confirmLabel;
   final Map<String, dynamic>? produto;
   final Map<String, dynamic>? listaPreco;
@@ -2523,6 +2574,13 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   late double _precoUnitario;
   bool _sincDesc = false;
 
+  /// null: modo %. unitario: R$ por unidade. linha: R$ fixo da linha.
+  String? _reaisModo;
+
+  bool get _modoUnitario => _reaisModo == descontoReaisModoUnitario;
+
+  bool get _modoLinha => _reaisModo == descontoReaisModoLinha;
+
   String _fmtNum(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
   String _fmtQtd(double v) =>
@@ -2532,6 +2590,11 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   void initState() {
     super.initState();
     _precoUnitario = widget.precoUnitario;
+    if (widget.descontoEmReais) {
+      _reaisModo = descontoReaisModoUnitario;
+    } else if (widget.descontoLinhaFixa) {
+      _reaisModo = descontoReaisModoLinha;
+    }
     _qtd = TextEditingController(text: _fmtQtd(widget.quantidadeInicial));
     _descPct = TextEditingController(text: _fmtNum(widget.descontoPctInicial));
     _descValor = TextEditingController(text: _fmtNum(widget.descontoValorInicial));
@@ -2562,28 +2625,96 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     if (!mounted) return;
     if ((novo - _precoUnitario).abs() > 0.0001) {
       setState(() => _precoUnitario = novo);
-      _syncFromPct();
+      if (_modoUnitario) {
+        _espelharPercentualDoUnitario();
+        setState(() {});
+      } else if (_modoLinha) {
+        _espelharPercentualDaLinha();
+        setState(() {});
+      } else {
+        _syncFromPct();
+      }
     }
   }
 
   double get _desconto {
+    if (_modoUnitario) {
+      return descontoLinhaReais(
+        valorDigitado: _parseNum(_descValor.text),
+        quantidade: _quantidade,
+        precoUnitario: _precoUnitario,
+      );
+    }
+    if (_modoLinha) {
+      return descontoLinhaValorInformado(_parseNum(_descValor.text), _bruto);
+    }
     final pct = _parseNum(_descPct.text);
-    if (pct > 0) return (_bruto * pct / 100).clamp(0.0, _bruto).toDouble();
+    if (pct > 0) return descontoLinhaPercentual(_bruto, pct);
     return _parseNum(_descValor.text).clamp(0.0, _bruto).toDouble();
   }
 
   void _syncFromPct() {
     if (_sincDesc) return;
     _sincDesc = true;
+    _reaisModo = null;
     final pct = _parseNum(_descPct.text);
     _descValor.text = _fmtNum((pct > 0 ? _bruto * pct / 100 : 0.0).toDouble());
     _sincDesc = false;
     setState(() {});
   }
 
+  void _escreverPctDoUnitario() {
+    final linha = descontoLinhaReais(
+      valorDigitado: _parseNum(_descValor.text),
+      quantidade: _quantidade,
+      precoUnitario: _precoUnitario,
+    );
+    final pct = _bruto > 0 ? (linha / _bruto * 100.0).clamp(0.0, 100.0) : 0.0;
+    _descPct.text = _fmtNum(pct.toDouble());
+  }
+
+  void _escreverPctDaLinha() {
+    var valor = _parseNum(_descValor.text);
+    if (_bruto > 0 && valor > _bruto) {
+      valor = _bruto;
+      _descValor.text = _fmtNum(valor);
+    }
+    final pct = _bruto > 0 ? (valor / _bruto * 100.0).clamp(0.0, 100.0) : 0.0;
+    _descPct.text = _fmtNum(pct.toDouble());
+  }
+
+  void _espelharPercentualDoUnitario() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    _escreverPctDoUnitario();
+    _sincDesc = false;
+  }
+
+  void _espelharPercentualDaLinha() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    _escreverPctDaLinha();
+    _sincDesc = false;
+  }
+
   void _syncFromValor() {
     if (_sincDesc) return;
     _sincDesc = true;
+    _reaisModo = normalizarDescontoReaisItemModo(widget.descontoReaisModo);
+    if (_modoLinha) {
+      _escreverPctDaLinha();
+    } else {
+      _escreverPctDoUnitario();
+    }
+    _sincDesc = false;
+    setState(() {});
+  }
+
+  /// Passo do campo R$ enquanto ele ainda espelha o total da linha do modo %.
+  void _syncLinhaParaPercentual() {
+    if (_sincDesc) return;
+    _sincDesc = true;
+    _reaisModo = null;
     final valor = _parseNum(_descValor.text).clamp(0.0, _bruto).toDouble();
     final pct = _bruto > 0 ? (valor / _bruto * 100.0).clamp(0.0, 100.0) : 0.0;
     _descPct.text = _fmtNum(pct);
@@ -2591,12 +2722,23 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     setState(() {});
   }
 
+  void _reagirQuantidade() {
+    if (_modoUnitario) {
+      _espelharPercentualDoUnitario();
+      setState(() {});
+    } else if (_modoLinha) {
+      _espelharPercentualDaLinha();
+      setState(() {});
+    } else {
+      _syncFromPct();
+    }
+    _atualizarPrecoPorQtd();
+  }
+
   void _alterarQtd(double delta) {
     final nova = (_parseNum(_qtd.text) + delta).clamp(0.001, 999999.0).toDouble();
     _qtd.text = _fmtQtd(nova);
-    _syncFromPct();
-    setState(() {});
-    _atualizarPrecoPorQtd();
+    _reagirQuantidade();
   }
 
   void _alterarDescPct(double delta) {
@@ -2607,10 +2749,23 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   }
 
   void _alterarDescValor(double delta) {
+    if (_modoUnitario) {
+      final teto = _precoUnitario > 0 ? _precoUnitario : _bruto;
+      final nova = (_parseNum(_descValor.text) + delta).clamp(0.0, teto).toDouble();
+      _descValor.text = _fmtNum(nova);
+      _syncFromValor();
+      return;
+    }
+    if (_modoLinha) {
+      final nova = (_parseNum(_descValor.text) + delta).clamp(0.0, _bruto).toDouble();
+      _descValor.text = _fmtNum(nova);
+      _espelharPercentualDaLinha();
+      setState(() {});
+      return;
+    }
     final nova = (_parseNum(_descValor.text) + delta).clamp(0.0, _bruto).toDouble();
     _descValor.text = _fmtNum(nova);
-    _syncFromValor();
-    setState(() {});
+    _syncLinhaParaPercentual();
   }
 
   Widget _stepBtn(IconData icon, VoidCallback onTap) {
@@ -2634,14 +2789,37 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     if (qtd <= 0) return;
 
     final pct = _parseNum(_descPct.text);
-    final item = _ItemPedido(
-      productId: widget.productId,
-      descricao: widget.descricao,
-      quantidade: qtd,
-      precoUnitario: _precoUnitario,
-      descontoPercentual: pct > 0 ? pct : null,
-      desconto: pct > 0 ? 0 : _parseNum(_descValor.text),
-    );
+    final valorCampo = _parseNum(_descValor.text);
+    final _ItemPedido item;
+    if (_modoUnitario) {
+      final unit = descontoUnitarioAplicado(valorCampo, _precoUnitario);
+      item = _ItemPedido(
+        productId: widget.productId,
+        descricao: widget.descricao,
+        quantidade: qtd,
+        precoUnitario: _precoUnitario,
+        descontoUnitario: unit > 0 ? unit : null,
+      );
+    } else if (_modoLinha) {
+      final linha = descontoLinhaValorInformado(valorCampo, qtd * _precoUnitario);
+      item = _ItemPedido(
+        productId: widget.productId,
+        descricao: widget.descricao,
+        quantidade: qtd,
+        precoUnitario: _precoUnitario,
+        desconto: linha,
+        descontoLinhaFixa: linha > 0,
+      );
+    } else {
+      item = _ItemPedido(
+        productId: widget.productId,
+        descricao: widget.descricao,
+        quantidade: qtd,
+        precoUnitario: _precoUnitario,
+        descontoPercentual: pct > 0 ? pct : null,
+        desconto: pct > 0 ? 0 : valorCampo,
+      );
+    }
 
     Navigator.pop(context, item);
   }
@@ -2708,11 +2886,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                           filled: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                         ),
-                        onChanged: (_) {
-                          _syncFromPct();
-                          setState(() {});
-                          _atualizarPrecoPorQtd();
-                        },
+                        onChanged: (_) => _reagirQuantidade(),
                       ),
                     ),
                     _stepBtn(Icons.add_rounded, () => _alterarQtd(1)),
@@ -2753,10 +2927,13 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                               controller: _descValor,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               textAlign: TextAlign.center,
-                              decoration: const InputDecoration(
-                                labelText: 'Desconto R\$',
+                              decoration: InputDecoration(
+                                labelText: normalizarDescontoReaisItemModo(widget.descontoReaisModo) ==
+                                        descontoReaisModoLinha
+                                    ? 'Desconto R\$'
+                                    : 'Desconto R\$/un',
                                 filled: true,
-                                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                                border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                               ),
                               onChanged: (_) => _syncFromValor(),
                             ),

@@ -8,6 +8,7 @@ import '../db/local_db.dart';
 import '../fv_carteira.dart';
 import '../ui/brand.dart';
 import '../ui/cliente_busca.dart';
+import '../ui/email_basico.dart';
 import '../ui/format.dart';
 import '../ui/uppercase_input.dart';
 import 'novo_cliente_screen.dart';
@@ -378,57 +379,31 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _editarTelefone(Map<String, dynamic> c, void Function(void Function()) setSheet) async {
-    final celularCtrl = TextEditingController(text: (c['celular1'] ?? c['whatsapp'] ?? '').toString());
-    final foneCtrl = TextEditingController(text: (c['fone1'] ?? '').toString());
-
-    final salvos = await showDialog<bool>(
+    final salvos = await showDialog<List<String>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Editar telefone'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: celularCtrl,
-              keyboardType: TextInputType.phone,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s()\-+]'))],
-              decoration: const InputDecoration(
-                labelText: 'Celular / WhatsApp',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: foneCtrl,
-              keyboardType: TextInputType.phone,
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s()\-+]'))],
-              decoration: const InputDecoration(
-                labelText: 'Telefone fixo',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Brand.green),
-            child: const Text('Salvar'),
+      builder: (ctx) => _EdicaoContatoDialogo(
+        titulo: 'Editar telefone',
+        campos: [
+          _CampoContato(
+            rotulo: 'Celular / WhatsApp',
+            inicial: (c['celular1'] ?? c['whatsapp'] ?? '').toString(),
+            teclado: TextInputType.phone,
+            formatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s()\-+]'))],
+            autofocus: true,
+          ),
+          _CampoContato(
+            rotulo: 'Telefone fixo',
+            inicial: (c['fone1'] ?? '').toString(),
+            teclado: TextInputType.phone,
+            formatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d\s()\-+]'))],
           ),
         ],
       ),
     );
 
-    final celular = celularCtrl.text.trim();
-    final fone = foneCtrl.text.trim();
-    celularCtrl.dispose();
-    foneCtrl.dispose();
-
-    if (salvos != true) return;
+    if (salvos == null) return;
+    final celular = salvos[0];
+    final fone = salvos[1];
 
     final id = c['id'] as int?;
     if (id == null) return;
@@ -449,6 +424,53 @@ class _ClientesScreenState extends State<ClientesScreen> {
     if (mounted) _snack('Telefone atualizado.', sucesso: true);
   }
 
+  String _emailExibicao(Map<String, dynamic> c) {
+    final v = (c['email'] ?? '').toString().trim();
+    return v.isEmpty ? '—' : v;
+  }
+
+  Future<void> _editarEmail(Map<String, dynamic> c, void Function(void Function()) setSheet) async {
+    final salvos = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => _EdicaoContatoDialogo(
+        titulo: 'Editar e-mail',
+        campos: [
+          _CampoContato(
+            rotulo: 'E-mail',
+            inicial: (c['email'] ?? '').toString(),
+            teclado: TextInputType.emailAddress,
+            autofocus: true,
+            email: true,
+          ),
+        ],
+        validar: (valores) => emailBasicoMensagem(valores.single),
+      ),
+    );
+
+    if (salvos == null) return;
+    final email = salvos.single;
+    if (emailBasicoMensagem(email) != null) {
+      _snack(emailBasicoMensagem(email)!);
+      return;
+    }
+
+    final id = c['id'] as int?;
+    if (id == null) return;
+
+    try {
+      await _db.saveCustomerEmail(id, email);
+    } catch (_) {
+      if (mounted) _snack('Não foi possível salvar o e-mail.');
+      return;
+    }
+
+    setSheet(() {
+      c['email'] = email;
+    });
+    await _buscar();
+    if (mounted) _snack('E-mail atualizado.', sucesso: true);
+  }
+
   void _snack(String msg, {bool sucesso = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -461,7 +483,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   void _detalhe(Map<String, dynamic> c) {
-    // Cópia mutável para refletir edição de telefone no sheet.
+    // Cópia mutável para refletir edição de telefone e e-mail no sheet.
     final cliente = Map<String, dynamic>.from(c);
 
     showModalBottomSheet(
@@ -517,7 +539,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       onWhatsApp: () => _abrirWhatsApp(cliente),
                       whatsEnabled: temWhats,
                     ),
-                    _linha(Icons.email_outlined, 'E-mail', (cliente['email'] ?? '—').toString()),
+                    _linhaEmail(
+                      valor: _emailExibicao(cliente),
+                      onEditar: () => _editarEmail(cliente, setSheet),
+                    ),
                     _linha(Icons.credit_score_outlined, 'Limite de crédito',
                         brMoney(cliente['limite_credito'] as num?)),
                     const SizedBox(height: 12),
@@ -598,6 +623,136 @@ class _ClientesScreenState extends State<ClientesScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _linhaEmail({
+    required String valor,
+    required VoidCallback onEditar,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.email_outlined, size: 18, color: Brand.blue),
+          const SizedBox(width: 10),
+          const Text('E-mail: ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+          Expanded(child: Text(valor, style: const TextStyle(fontSize: 13.5))),
+          IconButton(
+            tooltip: 'Editar e-mail',
+            onPressed: onEditar,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: const Icon(Icons.edit_outlined, size: 20, color: Brand.blue),
+          ),
+          const SizedBox(width: 36),
+        ],
+      ),
+    );
+  }
+}
+
+class _CampoContato {
+  const _CampoContato({
+    required this.rotulo,
+    required this.inicial,
+    this.teclado,
+    this.formatters = const [],
+    this.autofocus = false,
+    this.email = false,
+  });
+
+  final String rotulo;
+  final String inicial;
+  final TextInputType? teclado;
+  final List<TextInputFormatter> formatters;
+  final bool autofocus;
+  final bool email;
+}
+
+/// Diálogo de telefone/e-mail. Os controllers vivem neste State e só são
+/// descartados no dispose(), depois que os TextFields saem da árvore.
+class _EdicaoContatoDialogo extends StatefulWidget {
+  const _EdicaoContatoDialogo({
+    required this.titulo,
+    required this.campos,
+    this.validar,
+  });
+
+  final String titulo;
+  final List<_CampoContato> campos;
+  final String? Function(List<String> valores)? validar;
+
+  @override
+  State<_EdicaoContatoDialogo> createState() => _EdicaoContatoDialogoState();
+}
+
+class _EdicaoContatoDialogoState extends State<_EdicaoContatoDialogo> {
+  late final List<TextEditingController> _ctrls;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrls = [
+      for (final campo in widget.campos) TextEditingController(text: campo.inicial),
+    ];
+  }
+
+  @override
+  void dispose() {
+    for (final ctrl in _ctrls) {
+      ctrl.dispose();
+    }
+    super.dispose();
+  }
+
+  void _salvar() {
+    final valores = [for (final ctrl in _ctrls) ctrl.text.trim()];
+    final msg = widget.validar?.call(valores);
+    if (msg != null) {
+      setState(() => _erro = msg);
+      return;
+    }
+    Navigator.pop(context, valores);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.titulo),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < widget.campos.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            TextField(
+              controller: _ctrls[i],
+              keyboardType: widget.campos[i].teclado,
+              inputFormatters: widget.campos[i].formatters,
+              autocorrect: !widget.campos[i].email,
+              enableSuggestions: !widget.campos[i].email,
+              autofocus: widget.campos[i].autofocus,
+              decoration: InputDecoration(
+                labelText: widget.campos[i].rotulo,
+                isDense: true,
+                border: const OutlineInputBorder(),
+                errorText: widget.validar != null && i == widget.campos.length - 1 ? _erro : null,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: _salvar,
+          style: FilledButton.styleFrom(backgroundColor: Brand.green),
+          child: const Text('Salvar'),
+        ),
+      ],
     );
   }
 }

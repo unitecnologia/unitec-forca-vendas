@@ -9,6 +9,7 @@ import '../config.dart';
 import '../db/local_db.dart';
 import '../log/app_log.dart';
 import '../media/produto_foto_cache.dart';
+import '../pricing/item_desconto.dart';
 
 enum SyncStatus { idle, syncing, ok, offline, error }
 
@@ -123,6 +124,9 @@ class SyncService extends ChangeNotifier {
     if (meta is Map) {
       final pixOn = meta['pix_api_habilitada'] == true;
       final todosClientes = meta['ver_todos_clientes'] == true;
+      final modoReais = meta.containsKey('desconto_reais_item_modo')
+          ? normalizarDescontoReaisItemModo(meta['desconto_reais_item_modo'])
+          : null;
       var configChanged = false;
       if (config.pixApiHabilitada != pixOn) {
         config.pixApiHabilitada = pixOn;
@@ -135,6 +139,14 @@ class SyncService extends ChangeNotifier {
         AppLog.instance.info(
           'sync',
           'Clientes: ${todosClientes ? 'todos (empresa)' : 'só carteira'}',
+        );
+      }
+      if (modoReais != null && config.descontoReaisItemModo != modoReais) {
+        config.descontoReaisItemModo = modoReais;
+        configChanged = true;
+        AppLog.instance.info(
+          'sync',
+          'Desconto R\$ do item: ${modoReais == descontoReaisModoLinha ? 'total da linha' : 'por unidade'}',
         );
       }
       if (configChanged) {
@@ -211,6 +223,7 @@ class SyncService extends ChangeNotifier {
     } else {
       await _db.upsertAll('customers', customers, customerMapper);
     }
+    await _db.reapplyPendingCustomerEmailUpdates();
 
     // Rotas / dias de visita: substitui a lista da carteira a cada pull.
     if (data['visita_dias'] != null) {
@@ -343,10 +356,16 @@ class SyncService extends ChangeNotifier {
 
   Future<void> _push() async {
     final pendingCustomers = await _db.pendingCustomers();
+    final pendingEmailUpdates = await _db.pendingCustomerEmailUpdates();
     final pending = await _db.pendingOrders();
     final visitasPendentes = await _db.pendingVisitasSemVenda();
 
-    if (pendingCustomers.isEmpty && pending.isEmpty && visitasPendentes.isEmpty) return;
+    if (pendingCustomers.isEmpty &&
+        pendingEmailUpdates.isEmpty &&
+        pending.isEmpty &&
+        visitasPendentes.isEmpty) {
+      return;
+    }
 
     final customers = pendingCustomers.map((c) {
       final payload = _parseMap((c['payload_json'] as String?) ?? '');
@@ -358,17 +377,38 @@ class SyncService extends ChangeNotifier {
       };
     }).toList();
 
+    final emailUpdates = pendingEmailUpdates
+        .map((u) => <String, dynamic>{
+              'uuid': u['uuid'],
+              'person_id': u['person_id'],
+              'email': u['valor'] ?? '',
+            })
+        .toList();
+
     if (customers.isNotEmpty) {
       AppLog.instance.info('sync', 'Enviando ${customers.length} cliente(s)...');
+    }
+
+    if (emailUpdates.isNotEmpty) {
+      AppLog.instance.info('sync', 'Enviando ${emailUpdates.length} e-mail(s) de cliente...');
     }
 
     if (visitasPendentes.isNotEmpty) {
       AppLog.instance.info('sync', 'Enviando ${visitasPendentes.length} visita(s) sem venda...');
     }
 
-    if (customers.isNotEmpty) {
-      final customerResp = await api.push([], customers: customers);
-      await _applyCustomerResults(customerResp, pendingCustomers);
+    if (customers.isNotEmpty || emailUpdates.isNotEmpty) {
+      final customerResp = await api.push(
+        [],
+        customers: customers,
+        customerUpdates: emailUpdates,
+      );
+      if (customers.isNotEmpty) {
+        await _applyCustomerResults(customerResp, pendingCustomers);
+      }
+      if (emailUpdates.isNotEmpty) {
+        await _applyCustomerEmailUpdateResults(customerResp);
+      }
     }
 
     final ordersAfterCustomers = await _db.pendingOrders();
@@ -533,6 +573,32 @@ class SyncService extends ChangeNotifier {
       AppLog.instance.warn('sync', 'Clientes: $clientesOk enviado(s), $clientesErro com erro');
     } else if (clientesOk > 0) {
       AppLog.instance.ok('sync', 'Clientes: $clientesOk enviado(s)');
+    }
+  }
+
+  Future<void> _applyCustomerEmailUpdateResults(Map<String, dynamic> resp) async {
+    final results = (resp['customer_update_results'] as List<dynamic>? ?? []);
+    var ok = 0;
+    var comErro = 0;
+
+    for (final res in results) {
+      final m = Map<String, dynamic>.from(res as Map);
+      final uuid = m['uuid']?.toString();
+      if (uuid == null || uuid.isEmpty) continue;
+
+      if (m['status'] == 'importado') {
+        await _db.markCustomerEmailUpdate(uuid, 'enviado');
+        ok++;
+      } else if (m['status'] == 'erro') {
+        await _db.markCustomerEmailUpdate(uuid, 'erro', erro: m['erro']?.toString());
+        comErro++;
+      }
+    }
+
+    if (comErro > 0) {
+      AppLog.instance.warn('sync', 'E-mails de cliente: $ok enviado(s), $comErro com erro');
+    } else if (ok > 0) {
+      AppLog.instance.ok('sync', 'E-mails de cliente: $ok enviado(s)');
     }
   }
 

@@ -1,7 +1,9 @@
 workflows:
   forca-vendas-android:
     name: Forca de Vendas - Android APK
-    instance_type: mac_mini_m2
+    # Android only. mac_mini_m2 nao esta no plano atual.
+    # linux_x2 e a instancia Linux documentada para contas com faturamento.
+    instance_type: linux_x2
     max_build_duration: 60
     environment:
       # Fixado em 3.35.x: a stable atual gera AGP 9.0 (newDsl), que quebra o
@@ -20,6 +22,10 @@ workflows:
     triggering:
       events:
         - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
     scripts:
       - name: Gerar projeto Android (android/ nao e versionado)
         script: |
@@ -50,7 +56,8 @@ workflows:
           PKG=$(dirname "$DEST" | sed -n 's|.*/kotlin/\(.*\)|\1|p' | tr '/' '.')
           cp ci/MainActivity.kt "$DEST"
           if [ -n "$PKG" ]; then
-            sed -i '' "1s/^package .*/package $PKG/" "$DEST"
+            sed -i.bak "1s/^package .*/package $PKG/" "$DEST"
+            rm -f "$DEST.bak"
           fi
           echo "MainActivity instalado em $DEST (package $PKG)"
       - name: Configurar assinatura de release (chave estavel)

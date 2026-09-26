@@ -217,6 +217,7 @@ class ApiClient {
     List<Map<String, dynamic>> orders, {
     List<Map<String, dynamic>> customers = const [],
     List<Map<String, dynamic>> visitasSemVenda = const [],
+    List<Map<String, dynamic>> customerUpdates = const [],
   }) async {
     final r = await _http
         .post(
@@ -226,6 +227,7 @@ class ApiClient {
             'customers': customers,
             'orders': orders,
             'visitas_sem_venda': visitasSemVenda,
+            'customer_updates': customerUpdates,
           }),
         )
         .timeout(const Duration(seconds: 30));

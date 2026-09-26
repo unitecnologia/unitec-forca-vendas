@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'pricing/item_desconto.dart';
+
 /// Configuração de conexão + autorização do aparelho + sessão, persistida.
 class AppConfig {
   AppConfig({
@@ -22,6 +24,7 @@ class AppConfig {
     this.caixaNome = '',
     this.pixApiHabilitada = false,
     this.verTodosClientes = false,
+    this.descontoReaisItemModo = descontoReaisModoUnitario,
     this.estoqueNome = '',
     this.tabelaVendaId,
     this.tabelaVendaCodigo = '',
@@ -56,6 +59,9 @@ class AppConfig {
 
   /// Empresa liberou base aberta no Força de Vendas (todos os clientes no app).
   bool verTodosClientes;
+
+  /// Empresa → Monitor de vendas: unitario ou linha. Não altera o modo %.
+  String descontoReaisItemModo;
 
   String estoqueNome;
   int? tabelaVendaId;
@@ -101,6 +107,7 @@ class AppConfig {
         'caixaNome': caixaNome,
         'pixApiHabilitada': pixApiHabilitada,
         'verTodosClientes': verTodosClientes,
+        'descontoReaisItemModo': descontoReaisItemModo,
         'estoqueNome': estoqueNome,
         'tabelaVendaId': tabelaVendaId,
         'tabelaVendaCodigo': tabelaVendaCodigo,
@@ -131,6 +138,7 @@ class AppConfig {
         caixaNome: j['caixaNome'] ?? '',
         pixApiHabilitada: j['pixApiHabilitada'] == true,
         verTodosClientes: j['verTodosClientes'] == true,
+        descontoReaisItemModo: normalizarDescontoReaisItemModo(j['descontoReaisItemModo']),
         estoqueNome: j['estoqueNome'] ?? '',
         tabelaVendaId: j['tabelaVendaId'],
         tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
