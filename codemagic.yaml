@@ -94,6 +94,11 @@ workflows:
           rm -f android/app/build.gradle
       - name: Instalar dependencias
         script: flutter pub get
+      - name: Gerar icone do app (android/ e regenerado a cada build)
+        script: |
+          set -e
+          test -f assets/icon/app_icon.png
+          dart run flutter_launcher_icons
       - name: Build APK release (versionCode incremental)
         script: |
           set -e
