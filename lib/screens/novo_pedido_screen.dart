@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -2827,17 +2828,25 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    // A barra de navegação fica oculta (main.dart) e reaparece por cima do app
+    // sem refletir em viewPadding; systemGestureInsets cobre essa faixa mesmo oculta.
+    final barraSistema = math.max(
+      MediaQuery.viewPaddingOf(context).bottom,
+      MediaQuery.systemGestureInsetsOf(context).bottom,
+    );
+    final reservaBarra = math.max(0.0, barraSistema - bottom);
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: SafeArea(
-          top: false,
+      child: SafeArea(
+        top: false,
+        minimum: EdgeInsets.only(bottom: reservaBarra),
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
             child: Column(
