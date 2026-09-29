@@ -488,7 +488,7 @@ class _PedidoCard extends StatelessWidget {
   String _linhaNumeros() {
     final dav = (p['numero'] ?? '').toString();
     final pedido = (p['numero_pedido'] ?? '').toString();
-    final data = brDate(p['created_at'] as String?);
+    final data = brDateLocal(p['created_at'] as String?);
     final partes = <String>[];
     if (dav.isNotEmpty) {
       partes.add(ehOrcamento ? 'Nº $dav' : 'DAV $dav');

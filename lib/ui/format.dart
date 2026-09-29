@@ -56,6 +56,10 @@ String brMoneyShort(num? value) {
 }
 
 /// Converte 'YYYY-MM-DD' (ou ISO) para 'dd/MM/yyyy'. Retorna '—' se vazio.
+///
+/// Usa os componentes do [DateTime] parseado **sem** converter fuso — adequado
+/// a datas civis (vencimento, competência, `YYYY-MM-DD`). Para timestamps UTC
+/// (`...Z` / offset), use [brDateLocal].
 String brDate(String? iso) {
   if (iso == null || iso.isEmpty) return '—';
   final d = DateTime.tryParse(iso);
@@ -63,6 +67,20 @@ String brDate(String? iso) {
   final dd = d.day.toString().padLeft(2, '0');
   final mm = d.month.toString().padLeft(2, '0');
   return '$dd/$mm/${d.year}';
+}
+
+/// Formata um instante ISO (UTC `Z` ou com offset) como data civil no fuso local.
+///
+/// Ex.: `2026-09-29T02:30:00Z` em America/Sao_Paulo → `28/09/2026`.
+/// Null/vazio → `—`; inválido → devolve a string original (igual [brDate]).
+String brDateLocal(String? iso) {
+  if (iso == null || iso.isEmpty) return '—';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  final local = d.toLocal();
+  final dd = local.day.toString().padLeft(2, '0');
+  final mm = local.month.toString().padLeft(2, '0');
+  return '$dd/$mm/${local.year}';
 }
 
 /// Formata quantidade de estoque (0 decimais se inteiro).
