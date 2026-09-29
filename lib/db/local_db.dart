@@ -20,7 +20,7 @@ class LocalDb {
   }
 
   /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
-  static Future<Database> openAtPath(String path, {int version = 20}) {
+  static Future<Database> openAtPath(String path, {int version = 21}) {
     return openDatabase(
       path,
       version: version,
@@ -102,6 +102,22 @@ class LocalDb {
     }
     if (oldVersion < 20) {
       await db.execute(_createOutboxCustomerUpdatesSql);
+    }
+    if (oldVersion < 21) {
+      final formasInfo = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='formas_pagamento'",
+      );
+      if (formasInfo.isNotEmpty) {
+        final cols = await db.rawQuery('PRAGMA table_info(formas_pagamento)');
+        final hasIntervalo = cols.any((c) => c['name'] == 'intervalo_parcelas');
+        if (!hasIntervalo) {
+          await db.execute(
+            'ALTER TABLE formas_pagamento ADD COLUMN intervalo_parcelas INTEGER',
+          );
+        }
+      }
+      // Força pull completo para popular intervalo_parcelas nas formas cacheadas.
+      await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
     }
   }
 
@@ -235,6 +251,7 @@ class LocalDb {
             codigo INTEGER, descricao TEXT, tipo TEXT,
             tipo_movimento TEXT,
             nfce INTEGER, max_parcelas INTEGER,
+            intervalo_parcelas INTEGER,
             tabelas_json TEXT   -- [{id, dias, ordem}, ...]
           )''';
 

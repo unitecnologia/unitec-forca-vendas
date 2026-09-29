@@ -247,6 +247,7 @@ class SyncService extends ChangeNotifier {
             'tipo_movimento': r['tipo_movimento'],
             'nfce': _b(r['nfce']),
             'max_parcelas': r['max_parcelas'],
+            'intervalo_parcelas': r['intervalo_parcelas'],
             'tabelas_json': jsonEncode(r['tabelas_prazo'] ?? []),
           });
     }

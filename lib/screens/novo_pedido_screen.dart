@@ -23,6 +23,7 @@ import '../ui/produto_busca.dart';
 import '../ui/produto_list_card.dart';
 import '../ui/produto_foto_viewer.dart';
 import '../ui/uppercase_input.dart';
+import '../payment/prazo_financeiro.dart';
 import '../pricing/item_desconto.dart';
 import '../pricing/product_preco.dart';
 import 'pix_qr_screen.dart';
@@ -341,20 +342,42 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       _frete.text = _fmtInput(frete);
       _condicao.text = condicao;
 
+      // Prazo já negociado no documento — não sobrescrever pelo da forma.
+      final prazoNegociadoCondicao = condicao.trim();
+      final prazoNegociadoDias =
+          (extra['tabela_prazo_dias'] ?? '').toString().trim();
+      final tidExtra = _asInt(extra['tabela_prazo_id']);
+      final temPrazoNegociado = prazoNegociadoCondicao.isNotEmpty ||
+          prazoNegociadoDias.isNotEmpty ||
+          tidExtra != null;
+
       _transportadoraId = _asInt(extra['transportadora_id']);
       if (_cliente != null) {
         _preselecionarDoCliente();
       }
 
-      // Dados do orçamento prevalecem sobre o padrão do cliente.
+      // Dados do orçamento/pedido prevalecem sobre o padrão do cliente.
       final formaId = _asInt(extra['forma_pagamento_id']);
       if (formaId != null && _formaById(formaId) != null) {
-        _aplicarForma(formaId);
-        final tid = _asInt(extra['tabela_prazo_id']);
-        if (tid != null && _tabelaById(tid) != null) {
-          _tabelaPrazoId = tid;
-          _tabelaDias = (extra['tabela_prazo_dias'] ?? _tabelaById(tid)?['dias'])?.toString();
-        }
+        _aplicarForma(formaId, preservarPrazoNegociado: true);
+      }
+
+      if (prazoNegociadoCondicao.isNotEmpty) {
+        _condicao.text = prazoNegociadoCondicao;
+      }
+      if (tidExtra != null) {
+        _tabelaPrazoId = tidExtra;
+        _tabelaDias = prazoNegociadoDias.isNotEmpty
+            ? prazoNegociadoDias
+            : _tabelaById(tidExtra)?['dias']?.toString();
+        if (prazoNegociadoCondicao.isEmpty) _condicao.clear();
+      } else if (prazoNegociadoDias.isNotEmpty) {
+        _tabelaPrazoId = null;
+        _tabelaDias = prazoNegociadoDias;
+        if (prazoNegociadoCondicao.isEmpty) _condicao.clear();
+      } else if (!temPrazoNegociado) {
+        // Payload sem prazo: espelha o ERP (usa prazo financeiro da forma).
+        _aplicarPrazoFinanceiroDaForma();
       }
 
       final priceTableId = _asInt(extra['price_table_id']);
@@ -563,20 +586,49 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   }
 
   /// Define a forma selecionada e recarrega as tabelas de prazo dela.
-  void _aplicarForma(int? id) {
+  ///
+  /// [preservarPrazoNegociado]: ao reabrir pedido/orçamento, não substitui
+  /// `condicao_pagamento` / `tabela_prazo_dias` pelo prazo da forma.
+  void _aplicarForma(int? id, {bool preservarPrazoNegociado = false}) {
     final f = _formaById(id);
     _formaId = id;
     _forma = (f?['descricao'] ?? '').toString();
     _tabelas = _parseTabelas(f?['tabelas_json']);
     if (_tabelaById(_tabelaPrazoId) == null) {
       _tabelaPrazoId = null;
-      _tabelaDias = null;
+      if (!preservarPrazoNegociado) {
+        _tabelaDias = null;
+      }
     }
-    // Quando o Prazo Avulso some (dinheiro/pix) ou fica bloqueado (cliente com
-    // forma definida), limpa para não enviar prazo inválido ao ERP.
+    if (preservarPrazoNegociado) return;
+
+    // Quando o Prazo Avulso some (dinheiro/pix/prazo financeiro) ou fica
+    // bloqueado (cliente com forma definida), limpa para não enviar prazo
+    // inválido ao ERP.
     if (_avulsoOculto || _avulsoBloqueado) {
       _condicao.clear();
     }
+    _aplicarPrazoFinanceiroDaForma();
+  }
+
+  /// Aplica (ou limpa) o prazo financeiro da forma atual no estado do pedido.
+  void _aplicarPrazoFinanceiroDaForma() {
+    final dias = diasPrazoFinanceiroDaForma(_formaById(_formaId));
+    if (dias != null && dias.isNotEmpty) {
+      _tabelaPrazoId = null;
+      _tabelaDias = dias.join(',');
+      _condicao.clear();
+      return;
+    }
+    // Forma sem prazo financeiro válido: se não há tabela de prazo selecionada
+    // nem engessada no cliente, limpa dias auto-aplicados e deixa Prazo Avulso.
+    if (_tabelaPrazoId != null || _clienteComTabelaDefinida) return;
+    final clientDias = (_cliente?['tabela_prazo_dias'] ?? '').toString().trim();
+    if (clientDias.isNotEmpty) {
+      _tabelaDias = clientDias;
+      return;
+    }
+    _tabelaDias = null;
   }
 
   /// Aplica a forma/prazo pré-fixados no cadastro do cliente. Retorna true
@@ -831,8 +883,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Cliente já tem tabela de prazo amarrada no cadastro (engessado).
   bool get _clienteComTabelaDefinida => _asInt(_cliente?['tabela_prazo_id']) != null;
 
-  /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix).
-  bool get _avulsoOculto => _formaTipo() == 'dinheiro' || _formaTipo() == 'pix';
+  /// Forma com prazo financeiro válido (mesmo critério do ERP).
+  bool get _formaTemPrazoFinanceiroValido {
+    final (max, intervalo) = lerParcelasForma(_formaById(_formaId));
+    return isPrazoFinanceiroValido(max, intervalo);
+  }
+
+  /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix) ou quando a
+  /// forma já traz prazo financeiro configurado (ex.: BOLETO 7).
+  bool get _avulsoOculto =>
+      _formaTipo() == 'dinheiro' ||
+      _formaTipo() == 'pix' ||
+      _formaTemPrazoFinanceiroValido;
 
   /// Regra 1: Prazo Avulso bloqueado quando o cliente já tem forma/tabela
   /// no cadastro ou quando o Prazo/Parcelamento está selecionado.
@@ -997,6 +1059,18 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
     final itensJson = jsonEncode(_itens.map((i) => i.toJson()).toList());
 
+    // Garante que o prazo financeiro da forma vá no payload quando não há
+    // prazo avulso/tabela negociados (offline, consistente com o ERP).
+    var tabelaDiasPayload = (_tabelaDias ?? '').trim();
+    final condicaoPayload = _condicao.text.trim();
+    if (tabelaDiasPayload.isEmpty && condicaoPayload.isEmpty) {
+      final diasAuto = diasPrazoFinanceiroDaForma(_formaById(_formaId));
+      if (diasAuto != null && diasAuto.isNotEmpty) {
+        tabelaDiasPayload = diasAuto.join(',');
+        _tabelaDias = tabelaDiasPayload;
+      }
+    }
+
     final extra = <String, dynamic>{
       'percentual_desconto': _parseNum(_descPct.text),
       'forma_pagamento': _forma,
@@ -1004,8 +1078,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'caixa_id': context.read<AppState>().config.caixaId,
       'caixa_nome': context.read<AppState>().config.caixaNome,
       'tabela_prazo_id': _tabelaPrazoId,
-      'tabela_prazo_dias': _tabelaDias,
-      'condicao_pagamento': _condicao.text.trim(),
+      'tabela_prazo_dias': tabelaDiasPayload.isEmpty ? _tabelaDias : tabelaDiasPayload,
+      'condicao_pagamento': condicaoPayload,
       'price_table_id': _listaPreco?['id'],
       'lista_preco_nome': _listaPreco?['descricao'],
       'frete': _freteValor,
@@ -1686,13 +1760,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       .whereType<int>()
       .toList();
 
-  /// Dias de prazo efetivos para gerar os vencimentos. O "Prazo Avulso"
-  /// (campo livre) tem prioridade sobre a tabela de prazo da forma de
-  /// pagamento; se estiver vazio, usa a tabela da forma.
+  /// Dias de prazo efetivos para gerar os vencimentos.
+  /// Prioridade (alinhada ao ERP): Prazo Avulso → tabela_prazo_dias →
+  /// prazo financeiro da forma → vazio (à vista / mesmo dia no resumo).
   List<int> _diasEfetivos() {
     final avulso = _diasDe(_condicao.text);
     if (avulso.isNotEmpty) return avulso;
-    return _diasDe(_tabelaDias ?? '');
+    final tabela = _diasDe(_tabelaDias ?? '');
+    if (tabela.isNotEmpty) return tabela;
+    return diasPrazoFinanceiroDaForma(_formaById(_formaId)) ?? const <int>[];
   }
 
   Widget _parcelasResumo() {
@@ -2890,6 +2966,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                         controller: _qtd,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         textAlign: TextAlign.center,
+                        // Altura de linha fixa em 24px (padrão M3) para não alterar a altura do campo.
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, height: 24 / 18),
                         decoration: const InputDecoration(
                           labelText: 'Quantidade',
                           filled: true,
@@ -2913,9 +2991,11 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                               controller: _descPct,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 24 / 17),
                               decoration: const InputDecoration(
                                 labelText: 'Desconto %',
                                 suffixText: '%',
+                                suffixStyle: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 24 / 17),
                                 filled: true,
                                 border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                               ),
@@ -2936,6 +3016,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                               controller: _descValor,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 24 / 17),
                               decoration: InputDecoration(
                                 labelText: normalizarDescontoReaisItemModo(widget.descontoReaisModo) ==
                                         descontoReaisModoLinha
@@ -2958,7 +3039,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Total do item: ${brMoney(_bruto - _desconto)}',
-                        style: TextStyle(fontWeight: FontWeight.w800, color: Brand.green)),
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, height: 20 / 17, color: Brand.green)),
                   ],
                 ),
                 const SizedBox(height: 12),
