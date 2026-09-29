@@ -920,7 +920,7 @@ class _VisitasReportScreenState extends State<VisitasReportScreen> {
   @override
   Widget build(BuildContext context) {
     return ReportScaffold(
-      title: 'Visitas realizadas',
+      title: 'Visitas realizadas sem venda',
       onRefresh: _carregar,
       body: Column(
         children: [

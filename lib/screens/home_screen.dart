@@ -278,10 +278,12 @@ class _HeaderState extends State<_Header> {
                   borderRadius: BorderRadius.circular(12),
                   color: Colors.white,
                 ),
-                alignment: Alignment.center,
-                child: const Text('U',
-                    style: TextStyle(
-                        color: Brand.blue, fontSize: 24, fontWeight: FontWeight.w800)),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/icon/header_icon_fv.png',
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.high,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(

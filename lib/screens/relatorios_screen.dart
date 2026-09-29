@@ -134,7 +134,7 @@ class RelatoriosScreen extends StatelessWidget {
 
           ReportMenuTile(
 
-            title: 'Visitas realizadas',
+            title: 'Visitas realizadas sem venda',
 
             subtitle: 'Filtre por hoje, semana, mês ou período',
 
