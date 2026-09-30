@@ -883,10 +883,43 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   /// Cliente já tem tabela de prazo amarrada no cadastro (engessado).
   bool get _clienteComTabelaDefinida => _asInt(_cliente?['tabela_prazo_id']) != null;
 
+  String? get _modoPrazoForma => lerParcelasForma(_formaById(_formaId)).$3;
+
+  String _textoPrazoParcelamentoFixo() {
+    if (_clienteComTabelaDefinida) {
+      final dias = _diasDe((_tabelaDias ?? _cliente?['tabela_prazo_dias'] ?? '').toString());
+      if (dias.isEmpty) return '—';
+      return '${dias.join(', ')} dias';
+    }
+    final dias = diasPrazoFinanceiroDaForma(_formaById(_formaId)) ?? const <int>[];
+    if (dias.isEmpty) return '—';
+    return '${dias.join(', ')} dias';
+  }
+
+  Widget _prazoParcelamentoInfo(String texto) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 14 + Brand.textBump01cm,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF334155),
+        ),
+      ),
+    );
+  }
+
   /// Forma com prazo financeiro válido (mesmo critério do ERP).
   bool get _formaTemPrazoFinanceiroValido {
-    final (max, intervalo) = lerParcelasForma(_formaById(_formaId));
-    return isPrazoFinanceiroValido(max, intervalo);
+    final (max, intervalo, modo) = lerParcelasForma(_formaById(_formaId));
+    return isPrazoFinanceiroValido(max, intervalo, modo);
   }
 
   /// Regra 2: Prazo Avulso some em formas à vista (dinheiro/pix) ou quando a
@@ -1335,7 +1368,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
                             _tabelaDias = null;
                           }
                         }))),
-          if (!_avulsoPreenchido && (_tabelas.isNotEmpty || _clienteComTabelaDefinida))
+          if (!_avulsoPreenchido && (_clienteComTabelaDefinida || _modoPrazoForma == 'financeiro'))
+            _field('Prazo / Parcelamento', _prazoParcelamentoInfo(_textoPrazoParcelamentoFixo()))
+          else if (!_avulsoPreenchido &&
+              _tabelas.isNotEmpty &&
+              podeEscolherTabelaPrazo(
+                modoPrazo: _modoPrazoForma,
+                clienteTemTabelaFixa: _clienteComTabelaDefinida,
+              ))
             _field('Prazo / Parcelamento', _dropdown<int?>(
               value: _tabelaPrazoId,
               items: {

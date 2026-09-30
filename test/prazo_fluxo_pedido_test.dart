@@ -26,8 +26,8 @@ class _PrazoPedidoState {
   }
 
   bool get formaTemPrazoFinanceiroValido {
-    final (max, intervalo) = lerParcelasForma(formaById(formaId));
-    return isPrazoFinanceiroValido(max, intervalo);
+    final (max, intervalo, modo) = lerParcelasForma(formaById(formaId));
+    return isPrazoFinanceiroValido(max, intervalo, modo);
   }
 
   String formaTipo() => (formaById(formaId)?['tipo'] ?? '').toString();

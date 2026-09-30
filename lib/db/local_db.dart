@@ -20,7 +20,7 @@ class LocalDb {
   }
 
   /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
-  static Future<Database> openAtPath(String path, {int version = 21}) {
+  static Future<Database> openAtPath(String path, {int version = 22}) {
     return openDatabase(
       path,
       version: version,
@@ -117,6 +117,22 @@ class LocalDb {
         }
       }
       // Força pull completo para popular intervalo_parcelas nas formas cacheadas.
+      await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
+    }
+    if (oldVersion < 22) {
+      final formasInfo = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='formas_pagamento'",
+      );
+      if (formasInfo.isNotEmpty) {
+        final cols = await db.rawQuery('PRAGMA table_info(formas_pagamento)');
+        final hasModo = cols.any((c) => c['name'] == 'modo_prazo');
+        if (!hasModo) {
+          await db.execute(
+            'ALTER TABLE formas_pagamento ADD COLUMN modo_prazo TEXT',
+          );
+        }
+      }
+      // Força pull completo para popular modo_prazo nas formas cacheadas.
       await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
     }
   }
@@ -252,6 +268,7 @@ class LocalDb {
             tipo_movimento TEXT,
             nfce INTEGER, max_parcelas INTEGER,
             intervalo_parcelas INTEGER,
+            modo_prazo TEXT,
             tabelas_json TEXT   -- [{id, dias, ordem}, ...]
           )''';
 
