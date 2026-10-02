@@ -418,7 +418,25 @@ class SyncService extends ChangeNotifier {
 
     if (ordersAfterCustomers.isEmpty && visitasAfterCustomers.isEmpty) return;
 
-    final ordersPayload = ordersAfterCustomers.map((o) {
+    final ordersProntos = <Map<String, dynamic>>[];
+    for (final o in ordersAfterCustomers) {
+      final clienteId = (o['cliente_id'] as num?)?.toInt();
+      if (clienteId != null && clienteId < 0) {
+        final serverId = await _db.serverIdForLocalCustomer(clienteId);
+        final uuid = (o['uuid'] ?? '').toString();
+        if (serverId == null || serverId <= 0) {
+          AppLog.instance.info('sync', 'Pedido $uuid aguarda sincronização do cliente');
+          continue;
+        }
+        if (uuid.isNotEmpty) {
+          await _db.updateOrderClienteId(uuid, serverId);
+        }
+        o['cliente_id'] = serverId;
+      }
+      ordersProntos.add(o);
+    }
+
+    final ordersPayload = ordersProntos.map((o) {
       final itens = (o['itens_json'] as String?) ?? '[]';
       final extra = _parseMap((o['extra_json'] as String?) ?? '');
       return <String, dynamic>{
@@ -474,6 +492,8 @@ class SyncService extends ChangeNotifier {
               'device_uuid': config.deviceUuid,
             })
         .toList();
+
+    if (ordersPayload.isEmpty && visitasPayload.isEmpty) return;
 
     if (ordersPayload.isNotEmpty) {
       AppLog.instance.info('sync', 'Enviando ${ordersPayload.length} pedido(s)...');

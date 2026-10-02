@@ -440,6 +440,31 @@ class LocalDb {
     );
   }
 
+  /// Id do ERP já confirmado para um cliente criado no app (id local negativo).
+  Future<int?> serverIdForLocalCustomer(int localId) async {
+    final database = await db;
+    final rows = await database.query(
+      'outbox_customers',
+      columns: ['server_id'],
+      where: 'local_id = ? AND server_id > 0',
+      whereArgs: [localId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return (rows.first['server_id'] as num?)?.toInt();
+  }
+
+  /// Troca só a referência do cliente. UUID e status do pedido permanecem.
+  Future<void> updateOrderClienteId(String uuid, int clienteId) async {
+    final database = await db;
+    await database.update(
+      'outbox_orders',
+      {'cliente_id': clienteId},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+  }
+
   Future<void> markOrder(String uuid, String status, {String? erro, String? numero, String? numeroPedido}) async {
     final database = await db;
     final data = <String, dynamic>{'status': status, 'erro': erro};
