@@ -324,6 +324,12 @@ class AppState extends ChangeNotifier {
       if (user.containsKey('desconto_reais_item_modo')) {
         config.descontoReaisItemModo = normalizarDescontoReaisItemModo(user['desconto_reais_item_modo']);
       }
+      if (user.containsKey('imp_valor_liquido')) {
+        config.impValorLiquido = user['imp_valor_liquido'] == true;
+      }
+      if (user.containsKey('imp_sem_coluna_desconto')) {
+        config.impSemColunaDesconto = user['imp_sem_coluna_desconto'] == true;
+      }
       config.estoqueNome = (user['estoque_nome'] ?? '').toString();
       config.tabelaVendaId = user['tabela_venda_id'] is int
           ? user['tabela_venda_id'] as int

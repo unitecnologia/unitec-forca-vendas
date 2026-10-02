@@ -535,8 +535,9 @@ class LocalDb {
   Future<Map<String, dynamic>?> outboxOrderByUuid(String uuid) async {
     final database = await db;
     final rows = await database.rawQuery(
-      'SELECT o.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
-      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp '
+      'SELECT o.*, c.nome_razao, c.apelido_fantasia, c.cpf_cnpj, c.rg_ie, c.endereco, c.numero AS cliente_numero, '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp, '
+      'c.observacoes AS cliente_observacoes '
       'FROM outbox_orders o '
       'LEFT JOIN customers c ON c.id = o.cliente_id '
       'WHERE o.uuid = ? LIMIT 1',
@@ -554,8 +555,9 @@ class LocalDb {
 
     final database = await db;
     final rows = await database.rawQuery(
-      'SELECT p.*, c.nome_razao, c.cpf_cnpj, c.endereco, c.numero AS cliente_numero, '
-      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp '
+      'SELECT p.*, c.nome_razao, c.apelido_fantasia, c.cpf_cnpj, c.rg_ie, c.endereco, c.numero AS cliente_numero, '
+      'c.bairro, c.cidade_nome, c.uf, c.cep, c.email, c.fone1, c.celular1, c.whatsapp, '
+      'c.observacoes AS cliente_observacoes '
       'FROM pedidos_fv_cache p '
       'LEFT JOIN customers c ON c.id = p.cliente_id '
       'WHERE p.uuid = ? LIMIT 1',

@@ -149,6 +149,20 @@ class SyncService extends ChangeNotifier {
           'Desconto R\$ do item: ${modoReais == descontoReaisModoLinha ? 'total da linha' : 'por unidade'}',
         );
       }
+      if (meta.containsKey('imp_valor_liquido')) {
+        final liquido = meta['imp_valor_liquido'] == true;
+        if (config.impValorLiquido != liquido) {
+          config.impValorLiquido = liquido;
+          configChanged = true;
+        }
+      }
+      if (meta.containsKey('imp_sem_coluna_desconto')) {
+        final semColuna = meta['imp_sem_coluna_desconto'] == true;
+        if (config.impSemColunaDesconto != semColuna) {
+          config.impSemColunaDesconto = semColuna;
+          configChanged = true;
+        }
+      }
       if (configChanged) {
         await config.save();
       }

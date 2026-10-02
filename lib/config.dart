@@ -25,6 +25,8 @@ class AppConfig {
     this.pixApiHabilitada = false,
     this.verTodosClientes = false,
     this.descontoReaisItemModo = descontoReaisModoUnitario,
+    this.impValorLiquido = false,
+    this.impSemColunaDesconto = true,
     this.estoqueNome = '',
     this.tabelaVendaId,
     this.tabelaVendaCodigo = '',
@@ -62,6 +64,12 @@ class AppConfig {
 
   /// Empresa → Monitor de vendas: unitario ou linha. Não altera o modo %.
   String descontoReaisItemModo;
+
+  /// Empresa → Imprimir valor unitário líquido nos pedidos.
+  bool impValorLiquido;
+
+  /// Empresa → Ocultar coluna de desconto na impressão.
+  bool impSemColunaDesconto;
 
   String estoqueNome;
   int? tabelaVendaId;
@@ -108,6 +116,8 @@ class AppConfig {
         'pixApiHabilitada': pixApiHabilitada,
         'verTodosClientes': verTodosClientes,
         'descontoReaisItemModo': descontoReaisItemModo,
+        'impValorLiquido': impValorLiquido,
+        'impSemColunaDesconto': impSemColunaDesconto,
         'estoqueNome': estoqueNome,
         'tabelaVendaId': tabelaVendaId,
         'tabelaVendaCodigo': tabelaVendaCodigo,
@@ -139,6 +149,10 @@ class AppConfig {
         pixApiHabilitada: j['pixApiHabilitada'] == true,
         verTodosClientes: j['verTodosClientes'] == true,
         descontoReaisItemModo: normalizarDescontoReaisItemModo(j['descontoReaisItemModo']),
+        impValorLiquido: j['impValorLiquido'] == true,
+        impSemColunaDesconto: j.containsKey('impSemColunaDesconto')
+            ? j['impSemColunaDesconto'] == true
+            : true,
         estoqueNome: j['estoqueNome'] ?? '',
         tabelaVendaId: j['tabelaVendaId'],
         tabelaVendaCodigo: j['tabelaVendaCodigo'] ?? '',
@@ -173,7 +187,7 @@ class AppConfig {
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
   /// Com [rememberUser], empresa, usuário e vínculo do vendedor ficam para login offline.
-  /// [verTodosClientes] é regra da empresa — não zera no logout (senão a lista some até o sync).
+  /// [verTodosClientes] e as flags de impressão são regra da empresa — não zeram no logout.
   void clearSession() {
     token = '';
     if (!rememberUser) {
