@@ -1506,7 +1506,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   itemCount: _itens.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  separatorBuilder: (_, __) => const SizedBox(height: 3),
                   itemBuilder: (_, i) => _ItemListaTile(
                     key: ValueKey('item-$i-${_itens[i].productId}-${_itens[i].quantidade}'),
                     indice: i + 1,
@@ -2577,7 +2577,7 @@ class _ItemListaTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: EdgeInsets.fromLTRB(10, 10, somenteLeitura ? 10 : 4, 10),
+          padding: EdgeInsets.fromLTRB(10, 4, somenteLeitura ? 10 : 2, 4),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2603,7 +2603,7 @@ class _ItemListaTile extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13 + Brand.textBump01cm, height: 1.2)),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 1),
                     Text(
                       '${_fmtQtd(item.quantidade)} × ${brMoney(item.precoUnitario)}'
                       '${temDesconto ? '  •  desc. ${brMoney(item.desconto)}' : ''}',
@@ -2629,10 +2629,15 @@ class _ItemListaTile extends StatelessWidget {
               if (!somenteLeitura) ...[
                 Icon(Icons.chevron_right_rounded, size: 20, color: Colors.black.withValues(alpha: 0.25)),
                 IconButton(
-                  visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(40, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.standard,
+                  ),
+                  constraints: const BoxConstraints.tightFor(width: 40, height: 36),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 24),
                   color: Colors.redAccent,
                   onPressed: onRemove,
                 ),
@@ -2989,9 +2994,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      const Text('Preço unitário (bloqueado)', style: TextStyle(color: Colors.black54)),
                       Text(brMoney(_precoUnitario),
                           style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
                     ],
