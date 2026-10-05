@@ -44,10 +44,34 @@ class UnitecForcaVendasApp extends StatefulWidget {
 
 class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
     with WidgetsBindingObserver {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.state
+      ..onResetIniciado = () {
+        _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      }
+      ..onResetConcluido = () {
+        _messengerKey.currentState
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('Base local apagada por autorização do retaguarda. Entre novamente.'),
+            duration: Duration(seconds: 8),
+          ));
+      }
+      ..onSessaoRecusada = (mensagem) {
+        _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        _messengerKey.currentState
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(mensagem),
+            duration: const Duration(seconds: 8),
+          ));
+      };
   }
 
   @override
@@ -63,6 +87,8 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
       WakelockPlus.enable();
       if (widget.state.isLoggedIn) {
         widget.state.sync.syncNow();
+      } else if (widget.state.isConnected) {
+        widget.state.verificarResetPendente();
       }
     }
   }
@@ -72,6 +98,8 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
     return ChangeNotifierProvider.value(
       value: widget.state,
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
+        scaffoldMessengerKey: _messengerKey,
         title: 'Unitec Força de Vendas',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(

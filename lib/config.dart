@@ -37,6 +37,9 @@ class AppConfig {
     this.cachedToken = '',
     this.cachedEmpresasJson = '[]',
     this.cachedUsuariosJson = '{}',
+    this.resetEmAndamentoUuid = '',
+    this.resetConcluidoUuid = '',
+    this.vinculoUserId,
   });
 
   String baseUrl;
@@ -90,6 +93,18 @@ class AppConfig {
   String cachedEmpresasJson;
   String cachedUsuariosJson;
 
+  /// Reset da base autorizado pelo ERP que começou e ainda não terminou de apagar.
+  /// Enquanto preenchido, sync e login ficam bloqueados e o app tenta apagar de novo.
+  String resetEmAndamentoUuid;
+
+  /// Reset já executado localmente, aguardando confirmação no ERP.
+  /// Impede apagar a base de novo para a mesma autorização.
+  String resetConcluidoUuid;
+
+  /// Usuário (vendedor) a quem o aparelho está vinculado no ERP. Só ele entra.
+  /// Logout e desconectar não limpam; só o Reset da Base libera o aparelho.
+  int? vinculoUserId;
+
   bool get isConnected => baseUrl.isNotEmpty;
   bool get isApproved => deviceApproved;
   bool get isLoggedIn => token.isNotEmpty;
@@ -128,6 +143,9 @@ class AppConfig {
         'cachedToken': cachedToken,
         'cachedEmpresasJson': cachedEmpresasJson,
         'cachedUsuariosJson': cachedUsuariosJson,
+        'resetEmAndamentoUuid': resetEmAndamentoUuid,
+        'resetConcluidoUuid': resetConcluidoUuid,
+        'vinculoUserId': vinculoUserId,
       };
 
   static AppConfig fromJson(Map<String, dynamic> j) => AppConfig(
@@ -163,6 +181,11 @@ class AppConfig {
         cachedToken: j['cachedToken'] ?? '',
         cachedEmpresasJson: j['cachedEmpresasJson'] ?? '[]',
         cachedUsuariosJson: j['cachedUsuariosJson'] ?? '{}',
+        resetEmAndamentoUuid: j['resetEmAndamentoUuid'] ?? '',
+        resetConcluidoUuid: j['resetConcluidoUuid'] ?? '',
+        vinculoUserId: j['vinculoUserId'] is int
+            ? j['vinculoUserId'] as int
+            : int.tryParse('${j['vinculoUserId'] ?? ''}'),
       );
 
   static const _key = 'unitec_fv_config';
@@ -183,6 +206,47 @@ class AppConfig {
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(toJson()));
+  }
+
+  /// Reset da base autorizado pelo ERP: volta tudo ao padrão, mantendo só o que o
+  /// aparelho precisa para reconectar e continuar reconhecido (UUID, servidor,
+  /// autorização técnica) e os marcadores do próprio reset.
+  void limparParaBaseLimpa() {
+    final limpo = AppConfig(
+      baseUrl: baseUrl,
+      lastBaseUrl: lastBaseUrl,
+      deviceUuid: deviceUuid,
+      deviceName: deviceName,
+      pairingCode: pairingCode,
+      deviceApproved: deviceApproved,
+      resetEmAndamentoUuid: resetEmAndamentoUuid,
+      resetConcluidoUuid: resetConcluidoUuid,
+    );
+    empresaId = limpo.empresaId;
+    empresaNome = limpo.empresaNome;
+    token = limpo.token;
+    userId = limpo.userId;
+    userName = limpo.userName;
+    vendedorId = limpo.vendedorId;
+    vendedorNome = limpo.vendedorNome;
+    caixaId = limpo.caixaId;
+    caixaNome = limpo.caixaNome;
+    pixApiHabilitada = limpo.pixApiHabilitada;
+    verTodosClientes = limpo.verTodosClientes;
+    descontoReaisItemModo = limpo.descontoReaisItemModo;
+    impValorLiquido = limpo.impValorLiquido;
+    impSemColunaDesconto = limpo.impSemColunaDesconto;
+    estoqueNome = limpo.estoqueNome;
+    tabelaVendaId = limpo.tabelaVendaId;
+    tabelaVendaCodigo = limpo.tabelaVendaCodigo;
+    tabelaVendaDescricao = limpo.tabelaVendaDescricao;
+    lastSyncIso = limpo.lastSyncIso;
+    rememberUser = limpo.rememberUser;
+    biometricEnabled = limpo.biometricEnabled;
+    cachedToken = limpo.cachedToken;
+    cachedEmpresasJson = limpo.cachedEmpresasJson;
+    cachedUsuariosJson = limpo.cachedUsuariosJson;
+    vinculoUserId = limpo.vinculoUserId;
   }
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).

@@ -21,6 +21,10 @@ class ApiException implements Exception {
       message.toLowerCase().contains('aguardando autorização') ||
       message.toLowerCase().contains('não identificado');
 
+  /// ERP recusou a sessão pelo vínculo do aparelho (outro vendedor ou usuário sem vendedor).
+  bool get isVinculoRecusado =>
+      code == 'device_vinculado_outro' || code == 'user_sem_vendedor';
+
   bool get isPixIndisponivel =>
       code == 'pix_desabilitado' ||
       code == 'pix_erro' ||
@@ -48,7 +52,14 @@ class ApiClient {
   ApiClient(this.config);
 
   final AppConfig config;
-  final http.Client _http = http.Client();
+  http.Client _http = http.Client();
+
+  /// Derruba as requisições em andamento (reset da base). Novas chamadas usam outro cliente.
+  void abortarRequisicoes() {
+    final antigo = _http;
+    _http = http.Client();
+    antigo.close();
+  }
 
   Duration timeout = const Duration(seconds: 20);
 
@@ -152,17 +163,45 @@ class ApiClient {
     return _decode(r);
   }
 
+  /// UUID da autorização de reset da base pendente para este aparelho (ou null).
+  /// Servidor sem o recurso (404) conta como "sem reset".
+  Future<String?> resetPendente() async {
+    final r = await _http
+        .get(_uri('devices/reset', {'device_uuid': config.deviceUuid}), headers: _headers())
+        .timeout(const Duration(seconds: 8));
+    if (r.statusCode == 404) return null;
+    final data = _decode(r);
+    if (data['pending'] != true) return null;
+    final uuid = (data['reset_uuid'] ?? '').toString().trim();
+    return uuid.isEmpty ? null : uuid;
+  }
+
+  /// Informa ao ERP que a base local foi apagada para esta autorização.
+  Future<void> concluirReset(String resetUuid) async {
+    final r = await _http
+        .post(
+          _uri('devices/reset/$resetUuid/concluir'),
+          headers: _headers(),
+          body: jsonEncode({
+            'device_uuid': config.deviceUuid,
+            'app_version': kAppVersion,
+          }),
+        )
+        .timeout(timeout);
+    _decode(r);
+  }
+
   Future<Map<String, dynamic>> info() async {
     final r = await _http.get(_uri('info'), headers: _headers()).timeout(timeout);
     return _decode(r);
   }
 
-  Future<List<dynamic>> usuarios(int empresaId) async {
+  /// `{users: [...], vinculo_user_id: int|null}` — aparelho vinculado lista só o vendedor dele.
+  Future<Map<String, dynamic>> usuarios(int empresaId) async {
     final r = await _http
         .get(_uri('users', {'empresa_id': '$empresaId'}), headers: _headers())
         .timeout(timeout);
-    final data = _decode(r);
-    return (data['users'] as List<dynamic>? ?? []);
+    return _decode(r);
   }
 
   Future<Map<String, dynamic>> login({

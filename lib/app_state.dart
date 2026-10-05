@@ -4,7 +4,9 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'api/api_client.dart';
@@ -13,12 +15,16 @@ import 'config.dart';
 import 'config/erp_url.dart';
 import 'db/local_db.dart';
 import 'log/app_log.dart';
+import 'media/produto_foto_cache.dart';
 import 'pricing/item_desconto.dart';
 import 'sync/sync_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState(this.config) : api = ApiClient(config) {
-    sync = SyncService(config, api);
+    sync = SyncService(config, api)
+      ..bloqueada = (() => resetBloqueando)
+      ..verificarReset = _verificarResetNaSync
+      ..sessaoRecusada = _encerrarSessaoRecusada;
   }
 
   /// Restaura sessão persistida (sync periódica após reabrir o app).
@@ -30,8 +36,158 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       AppLog.instance.info('conexão', 'Restaurada offline: ${config.baseUrl}');
     }
+    // Reset interrompido (app fechado no meio): termina de apagar antes de tudo.
+    if (config.resetEmAndamentoUuid.isNotEmpty) {
+      await _executarReset(config.resetEmAndamentoUuid);
+    }
+    // Instalação anterior ao vínculo: o último usuário com sessão é o vendedor do
+    // aparelho no ERP (o servidor confirma/corrige na lista de usuários).
+    if (config.vinculoUserId == null &&
+        config.userId != null &&
+        config.cachedToken.isNotEmpty) {
+      config.vinculoUserId = config.userId;
+      await config.save();
+    }
     if (config.isLoggedIn) {
       sync.start();
+    } else if (config.isConnected) {
+      unawaited(verificarResetPendente());
+    }
+  }
+
+  // ---- Reset da base local (autorizado pelo retaguarda) --------------------
+
+  /// UI: fecha telas/diálogos abertos antes de apagar (rascunho em memória é descartado).
+  VoidCallback? onResetIniciado;
+
+  /// UI: avisa que a base foi apagada e o app voltou ao login.
+  VoidCallback? onResetConcluido;
+
+  bool _resetExecutando = false;
+  Timer? _resetRetry;
+
+  /// Sync e login ficam parados enquanto o reset estiver executando ou incompleto.
+  bool get resetBloqueando => _resetExecutando || config.resetEmAndamentoUuid.isNotEmpty;
+
+  /// Consulta o ERP e, havendo autorização pendente, apaga a base local.
+  /// Retorna true quando a base foi apagada agora.
+  Future<bool> verificarResetPendente() async {
+    if (config.resetEmAndamentoUuid.isNotEmpty) {
+      return _executarReset(config.resetEmAndamentoUuid);
+    }
+    final uuid = await _consultarReset();
+    if (uuid == null) return false;
+    return _executarReset(uuid);
+  }
+
+  /// UUID de reset a executar, ou null (sem autorização, offline, ou já executado
+  /// e só faltando confirmar no ERP).
+  Future<String?> _consultarReset() async {
+    if (!config.isConnected || config.deviceUuid.isEmpty) return null;
+    String? uuid;
+    try {
+      uuid = await api.resetPendente();
+    } catch (_) {
+      return null;
+    }
+    final jaExecutado = config.resetConcluidoUuid;
+    if (uuid == null) {
+      if (jaExecutado.isNotEmpty) {
+        config.resetConcluidoUuid = '';
+        await config.save();
+      }
+      return null;
+    }
+    if (uuid == jaExecutado) {
+      unawaited(_confirmarReset(uuid));
+      return null;
+    }
+    return uuid;
+  }
+
+  Future<bool> _verificarResetNaSync() async {
+    if (resetBloqueando) return true;
+    final uuid = await _consultarReset();
+    if (uuid == null) return false;
+    // Sem await: o reset espera esta sync terminar antes de apagar.
+    unawaited(_executarReset(uuid));
+    return true;
+  }
+
+  Future<bool> _executarReset(String uuid) async {
+    if (_resetExecutando) return false;
+    _resetExecutando = true;
+    _resetRetry?.cancel();
+    AppLog.instance.warn('reset', 'Reset da base autorizado pelo retaguarda ($uuid)');
+    try {
+      if (config.resetEmAndamentoUuid != uuid) {
+        config.resetEmAndamentoUuid = uuid;
+        await config.save();
+      }
+      notifyListeners();
+
+      sync.stop();
+      api.abortarRequisicoes();
+      await sync.aguardarOcioso();
+      onResetIniciado?.call();
+
+      await ProdutoFotoCache.instance.limparTudo();
+      await LocalDb.instance.apagarBase();
+      await _limparArquivosTemporarios();
+      await CredentialStore.clearSenha();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+
+      config.limparParaBaseLimpa();
+      config.resetConcluidoUuid = uuid;
+      config.resetEmAndamentoUuid = '';
+      await config.save();
+
+      await AppLog.instance.clear();
+      AppLog.instance.warn('reset', 'Base local apagada por autorização do retaguarda ($uuid)');
+      sync.limparEstado();
+      _resetExecutando = false;
+      notifyListeners();
+      onResetConcluido?.call();
+      unawaited(_confirmarReset(uuid));
+      return true;
+    } catch (e) {
+      AppLog.instance.error('reset', 'Falha ao apagar a base local: $e');
+      _resetExecutando = false;
+      notifyListeners();
+      _resetRetry = Timer(const Duration(seconds: 15), () {
+        unawaited(verificarResetPendente());
+      });
+      return false;
+    }
+  }
+
+  /// Só limpa o marcador depois que o ERP aceitar; falha de rede tenta de novo na próxima consulta.
+  Future<void> _confirmarReset(String uuid) async {
+    try {
+      await api.concluirReset(uuid);
+      AppLog.instance.ok('reset', 'Reset confirmado no ERP');
+    } on ApiException catch (e) {
+      final code = e.statusCode;
+      if (code == null || code >= 500 || isNetworkError(e)) return;
+      AppLog.instance.warn('reset', 'ERP recusou a confirmação do reset: ${e.message}');
+    } catch (_) {
+      return;
+    }
+    if (config.resetConcluidoUuid == uuid) {
+      config.resetConcluidoUuid = '';
+      await config.save();
+    }
+  }
+
+  Future<void> _limparArquivosTemporarios() async {
+    final tmp = await getTemporaryDirectory();
+    if (!await tmp.exists()) return;
+    await for (final entry in tmp.list(followLinks: false)) {
+      try {
+        await entry.delete(recursive: true);
+      } catch (_) {}
     }
   }
 
@@ -149,6 +305,7 @@ class AppState extends ChangeNotifier {
     await ensureDeviceIdentity();
     await config.save();
     notifyListeners();
+    unawaited(verificarResetPendente());
   }
 
   Future<void> connectFound(String baseUrl) async {
@@ -210,7 +367,29 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> info() async => api.info();
 
-  Future<List<dynamic>> usuariosDaEmpresa(int empresaId) async => api.usuarios(empresaId);
+  /// Lista do ERP; com aparelho vinculado vem só o vendedor dele (e o vínculo é gravado).
+  Future<List<dynamic>> usuariosDaEmpresa(int empresaId) async {
+    final data = await api.usuarios(empresaId);
+    if (data.containsKey('vinculo_user_id')) {
+      final vinculo = _asInt(data['vinculo_user_id']);
+      if (vinculo != config.vinculoUserId) {
+        config.vinculoUserId = vinculo;
+        await config.save();
+        notifyListeners();
+      }
+    }
+    return _somenteVinculado(data['users'] as List<dynamic>? ?? []);
+  }
+
+  /// Aparelho vinculado: só o vendedor do aparelho aparece/entra.
+  /// Livre: só usuários com vendedor (o ERP já filtra; cache antigo pode ter outros).
+  List<dynamic> _somenteVinculado(List<dynamic> users) {
+    final vinculo = config.vinculoUserId;
+    if (vinculo == null) {
+      return users.where((u) => u is Map && (_asInt(u['vendedor_id']) ?? 0) > 0).toList();
+    }
+    return users.where((u) => u is Map && _asInt(u['id']) == vinculo).toList();
+  }
 
   Future<void> cacheEmpresas(List<dynamic> empresas) async {
     config.cachedEmpresasJson = jsonEncode(empresas);
@@ -240,7 +419,7 @@ class AppState extends ChangeNotifier {
     try {
       final map = jsonDecode(config.cachedUsuariosJson) as Map<String, dynamic>?;
       final list = map?['$empresaId'];
-      return list is List ? List<dynamic>.from(list) : [];
+      return list is List ? _somenteVinculado(List<dynamic>.from(list)) : [];
     } catch (_) {
       return [];
     }
@@ -254,6 +433,21 @@ class AppState extends ChangeNotifier {
     bool rememberUser = false,
     bool biometricEnabled = false,
   }) async {
+    if (_resetExecutando) {
+      throw Exception('Apagando a base local autorizada pelo retaguarda. Aguarde.');
+    }
+    if (config.resetEmAndamentoUuid.isNotEmpty &&
+        !await _executarReset(config.resetEmAndamentoUuid)) {
+      throw Exception('Não foi possível concluir o reset da base local. Tente novamente.');
+    }
+    final vinculo = config.vinculoUserId;
+    if (vinculo != null && vinculo != userId) {
+      throw Exception(msgVinculadoOutro);
+    }
+    // Reset apagado aqui mas ainda não confirmado: o ERP só libera o vínculo ao confirmar.
+    if (config.resetConcluidoUuid.isNotEmpty) {
+      await _confirmarReset(config.resetConcluidoUuid);
+    }
     // Offline-first: com senha/token em cache não consulta o ERP (só 1ª vez online).
     final offlineOk = await _loginOffline(
       empresaId: empresaId,
@@ -282,6 +476,12 @@ class AppState extends ChangeNotifier {
         senha: senha,
       );
     } catch (e) {
+      if (e is ApiException && e.code == 'device_vinculado_outro') {
+        // Atualiza o vínculo local para a tela mostrar só o vendedor do aparelho.
+        try {
+          await cacheUsuarios(empresaId, await usuariosDaEmpresa(empresaId));
+        } catch (_) {}
+      }
       if (isNetworkError(e)) {
         final ok = await _loginOffline(
           empresaId: empresaId,
@@ -354,6 +554,9 @@ class AppState extends ChangeNotifier {
         }
       } catch (_) {}
     }
+    final device = resp['device'];
+    config.vinculoUserId =
+        (device is Map ? _asInt(device['vinculo_user_id']) : null) ?? config.userId;
     config.rememberUser = rememberUser;
     config.biometricEnabled = rememberUser && biometricEnabled;
     if (rememberUser) {
@@ -389,6 +592,7 @@ class AppState extends ChangeNotifier {
     if (token.isEmpty) return false;
     if (config.empresaId != null && config.empresaId != empresaId) return false;
     if (config.userId != null && config.userId != userId) return false;
+    if (config.vinculoUserId != null && config.vinculoUserId != userId) return false;
 
     config.token = token;
     config.empresaId = empresaId;
@@ -430,6 +634,26 @@ class AppState extends ChangeNotifier {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse('$v');
+  }
+
+  static const msgVinculadoOutro = 'Este aparelho está vinculado a outro vendedor.';
+
+  /// UI: sessão encerrada porque o ERP recusou o vínculo (mensagem do servidor).
+  void Function(String mensagem)? onSessaoRecusada;
+
+  /// ERP recusou o token deste usuário no aparelho: sai sem permitir reentrar
+  /// offline. O vínculo local continua (só o reset libera).
+  Future<void> _encerrarSessaoRecusada(ApiException e) async {
+    sync.stop();
+    await CredentialStore.clearSenha();
+    config
+      ..biometricEnabled = false
+      ..cachedToken = ''
+      ..clearSession();
+    await config.save();
+    AppLog.instance.warn('login', 'Sessão recusada pelo ERP: ${e.message}');
+    notifyListeners();
+    onSessaoRecusada?.call(e.message);
   }
 
   Future<void> logout() async {

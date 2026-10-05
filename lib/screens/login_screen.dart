@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/api_client.dart';
 import '../app_info.dart';
 import '../app_state.dart';
 import '../auth/credential_store.dart';
@@ -168,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await state.cacheUsuarios(_empresaId!, users);
       }
       if (!mounted) return;
-      final lastUser = state.config.userId;
+      final lastUser = state.config.vinculoUserId ?? state.config.userId;
       setState(() {
         _usuarios = users;
         _userId = lastUser != null && users.any((u) => _asInt(u['id']) == lastUser)
@@ -181,7 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       final cached = _ordenarUsuarios(state.usuariosEmCache(_empresaId!));
       if (cached.isNotEmpty) {
-        final lastUser = state.config.userId;
+        final lastUser = state.config.vinculoUserId ?? state.config.userId;
         setState(() {
           _usuarios = cached;
           _userId = lastUser != null && cached.any((u) => _asInt(u['id']) == lastUser)
@@ -231,8 +232,13 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       await state.syncDeviceApprovalFromError(e);
       if (!mounted) return;
+      final erro = '$e'.replaceFirst('Exception: ', '');
+      if (e is ApiException && e.code == 'device_vinculado_outro') {
+        await _carregarUsuarios(offline: true);
+        if (!mounted) return;
+      }
       setState(() {
-        _erro = '$e';
+        _erro = erro;
         _entrando = false;
       });
     }
@@ -287,6 +293,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vinculado = context.watch<AppState>().config.vinculoUserId != null;
     return Scaffold(
       backgroundColor: Brand.bg,
       resizeToAvoidBottomInset: true,
@@ -406,7 +413,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         })
                                         .whereType<DropdownMenuItem<int>>()
                                         .toList(),
-                                    onChanged: _carregandoUsuarios
+                                    onChanged: _carregandoUsuarios || vinculado
                                         ? null
                                         : (v) {
                                             setState(() => _userId = v);
@@ -415,6 +422,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                             });
                                           },
                                   ),
+                                  if (vinculado) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Aparelho vinculado a este vendedor. Para trocar, o retaguarda '
+                                      'precisa autorizar o Reset da Base.',
+                                      style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
+                                    ),
+                                  ],
                                   if (!_carregandoUsuarios && _empresaId != null && _usuarios.isEmpty) ...[
                                     const SizedBox(height: 8),
                                     Text(

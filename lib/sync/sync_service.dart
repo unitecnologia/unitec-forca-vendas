@@ -13,6 +13,11 @@ import '../pricing/item_desconto.dart';
 
 enum SyncStatus { idle, syncing, ok, offline, error }
 
+/// Sync abortada porque o reset da base foi autorizado (nada mais é gravado).
+class SyncInterrompida implements Exception {
+  const SyncInterrompida();
+}
+
 /// Serviço de sincronização offline-first.
 /// A cada ~30s (com jitter) faz PULL (delta + ETag) e PUSH (fila de pedidos).
 class SyncService extends ChangeNotifier {
@@ -29,8 +34,42 @@ class SyncService extends ChangeNotifier {
   DateTime? lastSyncAt;
   int pendingCount = 0;
 
+  /// true enquanto um reset da base estiver em andamento: nenhuma sync roda.
+  bool Function()? bloqueada;
+
+  /// Consulta o ERP no início de cada ciclo. Retorna true quando há reset da
+  /// base autorizado — o ciclo para antes de enviar ou baixar qualquer coisa.
+  Future<bool> Function()? verificarReset;
+
+  /// ERP recusou a sessão pelo vínculo do aparelho: o app encerra a sessão local.
+  Future<void> Function(ApiException e)? sessaoRecusada;
+
+  bool get _bloqueada => bloqueada?.call() ?? false;
+
+  void _checarBloqueio() {
+    if (_bloqueada) throw const SyncInterrompida();
+  }
+
+  /// Espera a sync em andamento terminar (ela para no próximo ponto de bloqueio).
+  Future<void> aguardarOcioso({Duration timeout = const Duration(seconds: 60)}) async {
+    final emAndamento = _inFlight;
+    if (emAndamento != null) {
+      await emAndamento.timeout(timeout);
+    }
+  }
+
+  /// Zera o estado exibido na Home após o reset da base.
+  void limparEstado() {
+    status = SyncStatus.idle;
+    lastError = null;
+    lastSyncAt = null;
+    pendingCount = 0;
+    notifyListeners();
+  }
+
   void start() {
     stop();
+    if (_bloqueada) return;
     _restoreLastSync();
     // Primeira sync imediata, depois a cada 30s + jitter (0-5s) para os
     // aparelhos não baterem no servidor no mesmo instante.
@@ -50,7 +89,9 @@ class SyncService extends ChangeNotifier {
   void _scheduleNext() {
     final jitter = Duration(milliseconds: Random().nextInt(5000));
     _timer = Timer(const Duration(seconds: 30) + jitter, () async {
+      if (_bloqueada) return;
       await syncNow();
+      if (_bloqueada || _timer == null) return;
       _scheduleNext();
     });
   }
@@ -61,7 +102,7 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> syncNow() async {
-    if (!config.isLoggedIn) return;
+    if (!config.isLoggedIn || _bloqueada) return;
     if (_inFlight != null) return _inFlight!;
     _inFlight = _syncNowInternal();
     try {
@@ -76,8 +117,15 @@ class SyncService extends ChangeNotifier {
     status = SyncStatus.syncing;
     notifyListeners();
     try {
+      final checarReset = verificarReset;
+      if (checarReset != null && await checarReset()) {
+        throw const SyncInterrompida();
+      }
+      _checarBloqueio();
       await _push().timeout(const Duration(seconds: 45));
+      _checarBloqueio();
       await _pull().timeout(const Duration(seconds: 180));
+      _checarBloqueio();
       pendingCount = await _db.pendingCount();
       lastSyncAt = DateTime.now();
       config.lastSyncIso = lastSyncAt!.toUtc().toIso8601String();
@@ -89,6 +137,10 @@ class SyncService extends ChangeNotifier {
       }
       // Completa cache local das fotos (funciona offline depois).
       unawaited(_cacheProdutoFotos());
+    } on SyncInterrompida {
+      status = SyncStatus.idle;
+      lastError = null;
+      AppLog.instance.warn('sync', 'Sincronização interrompida: reset da base autorizado');
     } on TimeoutException {
       status = SyncStatus.offline;
       lastError = 'Tempo esgotado — tente novamente';
@@ -97,6 +149,11 @@ class SyncService extends ChangeNotifier {
       status = SyncStatus.error;
       lastError = e.message;
       AppLog.instance.error('sync', 'Falha: ${e.message}');
+      if (e.isVinculoRecusado) {
+        stop();
+        final recusada = sessaoRecusada;
+        if (recusada != null) await recusada(e);
+      }
     } catch (e) {
       status = SyncStatus.offline;
       lastError = e.toString();
@@ -110,6 +167,7 @@ class SyncService extends ChangeNotifier {
     final etag = (etagRaw == null || etagRaw.isEmpty) ? null : etagRaw;
     final data = await api.pull(etag: etag);
     if (data == null) return; // 304 — nada mudou
+    _checarBloqueio();
 
     // Pull completo (sem `since`): o servidor manda o conjunto inteiro de
     // títulos em aberto, então substituímos a tabela para que os já quitados
@@ -199,6 +257,7 @@ class SyncService extends ChangeNotifier {
       await _db.upsertAll('products', products, productMapper);
     }
 
+    _checarBloqueio();
     // Pull completo: substitui clientes do servidor em transação (não deixa base pela metade).
     // Clientes locais ainda não enviados (id < 0) são preservados.
     final customers = List<dynamic>.from(data['customers'] ?? const []);
@@ -238,6 +297,7 @@ class SyncService extends ChangeNotifier {
       await _db.upsertAll('customers', customers, customerMapper);
     }
     await _db.reapplyPendingCustomerEmailUpdates();
+    _checarBloqueio();
 
     // Rotas / dias de visita: substitui a lista da carteira a cada pull.
     if (data['visita_dias'] != null) {
@@ -309,6 +369,7 @@ class SyncService extends ChangeNotifier {
           'ativo': _b(r['ativo']),
           'tabela_venda_id': r['tabela_venda_id'],
         });
+    _checarBloqueio();
     if (fullPull) {
       await _db.deleteAll('financeiro');
     }
@@ -343,19 +404,21 @@ class SyncService extends ChangeNotifier {
       await _db.upsertPedidoFvCache(_mapPedidoFvCacheRow(m));
     }
 
+    _checarBloqueio();
     for (final row in (data['pedidos_fv'] as List?) ?? const []) {
       final m = Map<String, dynamic>.from(row as Map);
       await _db.upsertPedidoFvCache(_mapPedidoFvCacheRow(m));
       await _db.applyPedidoFvSync(m);
     }
 
+    _checarBloqueio();
     if (data['_etag'] != null) {
       await _db.setMeta('pull_etag', data['_etag'] as String);
     }
   }
 
   Future<void> _cacheProdutoFotos() async {
-    if (config.baseUrl.isEmpty) return;
+    if (config.baseUrl.isEmpty || _bloqueada) return;
     try {
       final rows = await _db.query(
         "SELECT id, foto_url FROM products WHERE IFNULL(foto_url, '') != ''",
@@ -419,6 +482,7 @@ class SyncService extends ChangeNotifier {
         customers: customers,
         customerUpdates: emailUpdates,
       );
+      _checarBloqueio();
       if (customers.isNotEmpty) {
         await _applyCustomerResults(customerResp, pendingCustomers);
       }
@@ -427,6 +491,7 @@ class SyncService extends ChangeNotifier {
       }
     }
 
+    _checarBloqueio();
     final ordersAfterCustomers = await _db.pendingOrders();
     final visitasAfterCustomers = await _db.pendingVisitasSemVenda();
 
@@ -513,7 +578,9 @@ class SyncService extends ChangeNotifier {
       AppLog.instance.info('sync', 'Enviando ${ordersPayload.length} pedido(s)...');
     }
 
+    _checarBloqueio();
     final resp = await api.push(ordersPayload, visitasSemVenda: visitasPayload);
+    _checarBloqueio();
     final results = (resp['results'] as List<dynamic>? ?? []);
     var enviados = 0;
     var comErro = 0;

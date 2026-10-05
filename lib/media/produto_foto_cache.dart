@@ -28,6 +28,27 @@ class ProdutoFotoCache {
   Directory? _dir;
   Future<void>? _inFlight;
   final _pathMemo = <int, String?>{};
+  bool _cancelado = false;
+
+  /// Reset da base: interrompe downloads e apaga todas as fotos em disco.
+  Future<void> limparTudo() async {
+    _cancelado = true;
+    try {
+      final emAndamento = _inFlight;
+      if (emAndamento != null) {
+        await emAndamento.timeout(const Duration(seconds: 30), onTimeout: () {});
+      }
+      _pathMemo.clear();
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'produto_fotos'));
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+      _dir = null;
+    } finally {
+      _cancelado = false;
+    }
+  }
 
   Future<Directory> _ensureDir() async {
     if (_dir != null) return _dir!;
@@ -105,6 +126,7 @@ class ProdutoFotoCache {
 
     Future<void> worker() async {
       while (true) {
+        if (_cancelado) return;
         final i = index++;
         if (i >= pendentes.length) return;
         final item = pendentes[i];
@@ -154,6 +176,7 @@ class ProdutoFotoCache {
 
     final resp = await http.get(Uri.parse(fullUrl)).timeout(const Duration(seconds: 20));
     if (resp.statusCode != 200 || resp.bodyBytes.isEmpty) return false;
+    if (_cancelado) return null;
 
     final ext = _extFrom(resp.headers['content-type'], fullUrl);
     await _clearProductFiles(dir, productId);

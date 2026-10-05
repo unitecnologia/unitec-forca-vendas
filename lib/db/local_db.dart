@@ -220,10 +220,23 @@ class LocalDb {
         await db.execute(_createPedidosFvCacheSql);
   }
 
-  Future<Database> _open() async {
-    final dir = await getDatabasesPath();
-    final path = p.join(dir, 'unitec_fv.db');
-    return openAtPath(path);
+  static Future<String> _path() async => p.join(await getDatabasesPath(), 'unitec_fv.db');
+
+  Future<Database> _open() async => openAtPath(await _path());
+
+  /// Reset da base: fecha e apaga o arquivo SQLite inteiro (catálogo, clientes,
+  /// pedidos, outbox, históricos). O próximo acesso cria uma base vazia.
+  Future<void> apagarBase() async {
+    final path = await _path();
+    final atual = _db;
+    _db = null;
+    if (atual != null && atual.isOpen) {
+      await atual.close();
+    }
+    await deleteDatabase(path);
+    if (await databaseExists(path)) {
+      throw StateError('Não foi possível apagar a base local.');
+    }
   }
 
   static const String _createPedidosFvCacheSql = '''
