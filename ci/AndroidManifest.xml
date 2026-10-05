@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Atualização do app pela GitHub Release (abre o instalador padrão; nunca silenciosa) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
@@ -38,7 +40,7 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- PDF → WhatsApp (content URI seguro) -->
+        <!-- PDF → WhatsApp e APK de atualização → instalador (content URI seguro) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

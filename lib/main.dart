@@ -10,6 +10,8 @@ import 'screens/connect_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/waiting_approval_screen.dart';
+import 'update/app_updater.dart';
+import 'update/update_dialog.dart';
 
 /// Esconde a barra de navegação do Android (voltar/home/recentes),
 /// mantendo só a barra de status no topo.
@@ -72,6 +74,16 @@ class _UnitecForcaVendasAppState extends State<UnitecForcaVendasApp>
             duration: const Duration(seconds: 8),
           ));
       };
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verificarAtualizacao());
+  }
+
+  /// Ao abrir o app (no máximo 1x a cada 24 h): oferece a versão nova da GitHub Release.
+  Future<void> _verificarAtualizacao() async {
+    final release = await AppUpdater.instance.verificar();
+    if (release == null || !mounted || widget.state.resetBloqueando) return;
+    final ctx = _navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await mostrarAtualizacaoDisponivel(ctx, release);
   }
 
   @override
