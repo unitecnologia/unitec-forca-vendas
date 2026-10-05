@@ -1,7 +1,7 @@
 name: unitec_forca_vendas
 description: Aplicativo de força de vendas do Unitec ERP (offline-first, sincroniza com o ERP local).
 publish_to: "none"
-version: 1.4.30+82
+version: 1.4.31+83
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -28,7 +28,7 @@ dependencies:
   # 2.2, Java 17) que o projeto android/ gerado na CI nao garante.
   wakelock_plus: 1.2.8
   mobile_scanner: ^7.4.0
-  # 3.0.2+ exige Dart ^3.10; CI Codemagic está em Flutter 3.35 / Dart 3.9.
+  # 3.0.2+ exige Dart ^3.10.
   local_auth: 3.0.1
   flutter_secure_storage: ^10.3.1
   # SHA-256 do APK de atualização (GitHub Release).

@@ -44,6 +44,15 @@ class AtualizacaoException implements Exception {
   String toString() => message;
 }
 
+/// Resultado de uma consulta à GitHub Release.
+/// [release] só vem preenchido quando existe versão mais nova.
+class ResultadoAtualizacao {
+  const ResultadoAtualizacao({this.release, this.falhou = false});
+
+  final AppRelease? release;
+  final bool falhou;
+}
+
 /// Atualização do APK pela GitHub Release pública (sem token).
 ///
 /// Só troca o APK: não toca em SQLite, sessão, vínculo, outbox nem configuração.
@@ -54,8 +63,7 @@ class AppUpdater {
   static final AppUpdater instance = AppUpdater._();
 
   static const _repo = 'unitecnologia/unitec-forca-vendas';
-  // FV_UPDATE_URL só existe em build de teste local (sem o limite de 24 h);
-  // o Codemagic não define.
+  // FV_UPDATE_URL só existe em build de teste local (sem o limite de 24 h).
   static const _buildTeste = bool.hasEnvironment('FV_UPDATE_URL');
   static const _latestUrl = String.fromEnvironment(
     'FV_UPDATE_URL',
@@ -65,7 +73,8 @@ class AppUpdater {
   static const _intervalo = Duration(hours: 24);
   static const _channel = MethodChannel('com.unitec.forca_vendas/updater');
 
-  static const msgHashInvalido = 'Não foi possível validar o arquivo de atualização.';
+  static const msgHashInvalido =
+      'Não foi possível validar o arquivo de atualização.';
 
   Future<String?>? _downloadEmAndamento;
 
@@ -74,13 +83,23 @@ class AppUpdater {
   /// Consulta a Release mais nova. Sem [forcar], no máximo uma vez a cada 24 h.
   /// Nunca lança: offline/timeout/GitHub fora apenas retornam null.
   Future<AppRelease?> verificar({bool forcar = false}) async {
-    if (!Platform.isAndroid) return null;
+    final r = await consultar(forcar: forcar);
+    return r.release;
+  }
+
+  /// Igual a [verificar], mas distingue "já está atualizado" de falha de rede.
+  /// O botão da tela de login usa [forcar] para ignorar o intervalo de 24 h.
+  Future<ResultadoAtualizacao> consultar({bool forcar = false}) async {
+    if (!Platform.isAndroid) return const ResultadoAtualizacao();
     try {
       final prefs = await SharedPreferences.getInstance();
       final ultima = prefs.getInt(_prefUltimaConsulta) ?? 0;
       final agora = DateTime.now().millisecondsSinceEpoch;
-      if (!forcar && !_buildTeste && agora - ultima < _intervalo.inMilliseconds && agora >= ultima) {
-        return null;
+      if (!forcar &&
+          !_buildTeste &&
+          agora - ultima < _intervalo.inMilliseconds &&
+          agora >= ultima) {
+        return const ResultadoAtualizacao();
       }
       if (!baixando) await _limparDownloadsAntigos();
 
@@ -92,15 +111,19 @@ class AppUpdater {
       if (r.statusCode == 200 || r.statusCode == 404) {
         await prefs.setInt(_prefUltimaConsulta, agora);
       }
-      if (r.statusCode != 200) return null;
+      if (r.statusCode != 200) {
+        return ResultadoAtualizacao(falhou: r.statusCode != 404);
+      }
 
       final release = parseRelease(jsonDecode(r.body));
-      if (release == null || !ehMaisNova(release)) return null;
-      AppLog.instance.info('atualização', 'Nova versão disponível: ${release.versionName}');
-      return release;
+      if (release == null || !ehMaisNova(release))
+        return const ResultadoAtualizacao();
+      AppLog.instance.info(
+          'atualização', 'Nova versão disponível: ${release.versionName}');
+      return ResultadoAtualizacao(release: release);
     } catch (e) {
       AppLog.instance.info('atualização', 'Consulta de versão ignorada: $e');
-      return null;
+      return const ResultadoAtualizacao(falhou: true);
     }
   }
 
@@ -134,7 +157,8 @@ class AppUpdater {
     if (sha == null) return null;
 
     final body = (data['body'] ?? '').toString();
-    final match = RegExp(r'versionCode\s*(\d+)', caseSensitive: false).firstMatch(body);
+    final match =
+        RegExp(r'versionCode\s*(\d+)', caseSensitive: false).firstMatch(body);
     return AppRelease(
       tag: tag,
       versionName: versionName,
@@ -147,7 +171,8 @@ class AppUpdater {
   }
 
   /// versionCode manda; sem ele (release antiga), compara o nome X.Y.Z.
-  static bool ehMaisNova(AppRelease r, {int build = kAppBuild, String versao = kAppVersion}) {
+  static bool ehMaisNova(AppRelease r,
+      {int build = kAppBuild, String versao = kAppVersion}) {
     final code = r.versionCode;
     if (code != null) return code > build;
     return compararVersao(r.versionName, versao) > 0;
@@ -180,7 +205,8 @@ class AppUpdater {
 
   /// Baixa e valida o APK. Retorna o caminho do arquivo pronto para instalar.
   /// Chamadas simultâneas reaproveitam o mesmo download.
-  Future<String> baixar(AppRelease release, {void Function(int recebido, int total)? progresso}) {
+  Future<String> baixar(AppRelease release,
+      {void Function(int recebido, int total)? progresso}) {
     final atual = _downloadEmAndamento;
     if (atual != null) return atual.then((v) => v!);
     final f = _baixar(release, progresso);
@@ -188,7 +214,8 @@ class AppUpdater {
     return f.whenComplete(() => _downloadEmAndamento = null).then((v) => v!);
   }
 
-  Future<String?> _baixar(AppRelease release, void Function(int, int)? progresso) async {
+  Future<String?> _baixar(
+      AppRelease release, void Function(int, int)? progresso) async {
     final dir = await _pasta();
     await dir.create(recursive: true);
     final destino = File(p.join(dir.path, release.apkName));
@@ -203,22 +230,28 @@ class AppUpdater {
         'User-Agent': 'unitec-forca-vendas/$kAppVersion+$kAppBuild',
       }).timeout(const Duration(seconds: 20));
       if (shaResp.statusCode != 200) {
-        throw AtualizacaoException('Não foi possível baixar a atualização (HTTP ${shaResp.statusCode}).');
+        throw AtualizacaoException(
+            'Não foi possível baixar a atualização (HTTP ${shaResp.statusCode}).');
       }
-      final esperado = RegExp(r'\b[0-9a-fA-F]{64}\b').firstMatch(shaResp.body)?.group(0)?.toLowerCase();
+      final esperado = RegExp(r'\b[0-9a-fA-F]{64}\b')
+          .firstMatch(shaResp.body)
+          ?.group(0)
+          ?.toLowerCase();
       if (esperado == null) throw AtualizacaoException(msgHashInvalido);
 
       final req = http.Request('GET', Uri.parse(release.apkUrl))
         ..headers['User-Agent'] = 'unitec-forca-vendas/$kAppVersion+$kAppBuild';
       final resp = await client.send(req).timeout(const Duration(seconds: 30));
       if (resp.statusCode != 200) {
-        throw AtualizacaoException('Não foi possível baixar a atualização (HTTP ${resp.statusCode}).');
+        throw AtualizacaoException(
+            'Não foi possível baixar a atualização (HTTP ${resp.statusCode}).');
       }
       final total = resp.contentLength ?? release.apkSize;
       var recebido = 0;
       final sink = parcial.openWrite();
       try {
-        await for (final chunk in resp.stream.timeout(const Duration(seconds: 60))) {
+        await for (final chunk
+            in resp.stream.timeout(const Duration(seconds: 60))) {
           sink.add(chunk);
           recebido += chunk.length;
           progresso?.call(recebido, total);
@@ -230,14 +263,17 @@ class AppUpdater {
         throw AtualizacaoException('Download incompleto. Tente novamente.');
       }
 
-      final calculado = (await sha256.bind(parcial.openRead()).first).toString();
+      final calculado =
+          (await sha256.bind(parcial.openRead()).first).toString();
       if (calculado != esperado) {
-        AppLog.instance.error('atualização', 'SHA-256 diferente (esperado $esperado, obtido $calculado)');
+        AppLog.instance.error('atualização',
+            'SHA-256 diferente (esperado $esperado, obtido $calculado)');
         throw AtualizacaoException(msgHashInvalido);
       }
       await parcial.rename(destino.path);
       await _conferirPacote(destino.path);
-      AppLog.instance.ok('atualização', 'APK ${release.versionName} baixado e validado');
+      AppLog.instance
+          .ok('atualização', 'APK ${release.versionName} baixado e validado');
       return destino.path;
     } catch (e) {
       for (final f in [destino, parcial]) {
@@ -246,10 +282,12 @@ class AppUpdater {
         } catch (_) {}
       }
       if (e is TimeoutException) {
-        throw AtualizacaoException('Tempo esgotado ao baixar a atualização. Tente novamente.');
+        throw AtualizacaoException(
+            'Tempo esgotado ao baixar a atualização. Tente novamente.');
       }
       if (e is SocketException || e is http.ClientException) {
-        throw AtualizacaoException('Sem conexão para baixar a atualização. Tente novamente.');
+        throw AtualizacaoException(
+            'Sem conexão para baixar a atualização. Tente novamente.');
       }
       if (e is PlatformException) {
         throw AtualizacaoException(msgHashInvalido);
@@ -262,7 +300,8 @@ class AppUpdater {
 
   /// O arquivo precisa ser deste app e mais novo que o instalado.
   Future<void> _conferirPacote(String path) async {
-    final info = await _channel.invokeMapMethod<String, dynamic>('apkInfo', {'path': path});
+    final info = await _channel
+        .invokeMapMethod<String, dynamic>('apkInfo', {'path': path});
     final pacote = info?['packageName']?.toString();
     final atual = info?['currentPackage']?.toString();
     final code = (info?['versionCode'] as num?)?.toInt();
@@ -272,7 +311,8 @@ class AppUpdater {
     }
     if (code <= kAppBuild) {
       await File(path).delete();
-      throw AtualizacaoException('O aplicativo já está na versão mais recente.');
+      throw AtualizacaoException(
+          'O aplicativo já está na versão mais recente.');
     }
   }
 

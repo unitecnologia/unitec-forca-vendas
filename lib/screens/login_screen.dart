@@ -6,6 +6,8 @@ import '../app_info.dart';
 import '../app_state.dart';
 import '../auth/credential_store.dart';
 import '../ui/brand.dart';
+import '../update/app_updater.dart';
+import '../update/update_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,6 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _biometriaDisponivel = false;
   bool _temSenhaSalva = false;
   bool _modoOffline = false;
+  bool _consultandoAtualizacao = false;
   String? _erro;
 
   static int? _asInt(dynamic v) {
@@ -48,7 +51,9 @@ class _LoginScreenState extends State<LoginScreen> {
   static List<dynamic> _ordenarEmpresas(List<dynamic> empresas) {
     final sorted = List<dynamic>.from(empresas);
     sorted.sort(
-      (a, b) => _empresaLabel(a).toUpperCase().compareTo(_empresaLabel(b).toUpperCase()),
+      (a, b) => _empresaLabel(a)
+          .toUpperCase()
+          .compareTo(_empresaLabel(b).toUpperCase()),
     );
     return sorted;
   }
@@ -112,7 +117,8 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       final info = await state.info();
-      final empresas = _ordenarEmpresas(info['empresas'] as List<dynamic>? ?? []);
+      final empresas =
+          _ordenarEmpresas(info['empresas'] as List<dynamic>? ?? []);
       await state.cacheEmpresas(empresas);
       setState(() {
         _empresas = empresas;
@@ -172,9 +178,10 @@ class _LoginScreenState extends State<LoginScreen> {
       final lastUser = state.config.vinculoUserId ?? state.config.userId;
       setState(() {
         _usuarios = users;
-        _userId = lastUser != null && users.any((u) => _asInt(u['id']) == lastUser)
-            ? lastUser
-            : (users.isNotEmpty ? _asInt(users.first['id']) : null);
+        _userId =
+            lastUser != null && users.any((u) => _asInt(u['id']) == lastUser)
+                ? lastUser
+                : (users.isNotEmpty ? _asInt(users.first['id']) : null);
         _carregandoUsuarios = false;
       });
     } catch (e) {
@@ -185,9 +192,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final lastUser = state.config.vinculoUserId ?? state.config.userId;
         setState(() {
           _usuarios = cached;
-          _userId = lastUser != null && cached.any((u) => _asInt(u['id']) == lastUser)
-              ? lastUser
-              : (cached.isNotEmpty ? _asInt(cached.first['id']) : null);
+          _userId =
+              lastUser != null && cached.any((u) => _asInt(u['id']) == lastUser)
+                  ? lastUser
+                  : (cached.isNotEmpty ? _asInt(cached.first['id']) : null);
           _modoOffline = true;
           _erro = null;
           _carregandoUsuarios = false;
@@ -195,7 +203,8 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       setState(() {
-        _erro = voltouEspera ? null : 'NÃ£o foi possÃ­vel carregar usuÃ¡rios: $e';
+        _erro =
+            voltouEspera ? null : 'NÃ£o foi possÃ­vel carregar usuÃ¡rios: $e';
         _carregandoUsuarios = false;
       });
     }
@@ -262,7 +271,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (senha == null || senha.isEmpty) {
       if (mounted) {
         setState(() {
-          _erro = 'Senha nÃ£o encontrada. Entre com a senha e ative a digital de novo.';
+          _erro =
+              'Senha nÃ£o encontrada. Entre com a senha e ative a digital de novo.';
           _usarDigital = false;
           _temSenhaSalva = false;
         });
@@ -307,7 +317,8 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         child: SafeArea(
           child: _loading
-              ? const Center(child: CircularProgressIndicator(color: Brand.blue))
+              ? const Center(
+                  child: CircularProgressIndicator(color: Brand.blue))
               : Column(
                   children: [
                     Padding(
@@ -324,11 +335,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           const Spacer(),
+                          _botaoAtualizar(),
+                          const SizedBox(width: 6),
                           _statusConexaoChip(offline: _modoOffline),
                           IconButton(
                             tooltip: 'Trocar servidor',
-                            icon: const Icon(Icons.lan_outlined, color: Brand.blue),
-                            onPressed: () => context.read<AppState>().disconnect(),
+                            icon: const Icon(Icons.lan_outlined,
+                                color: Brand.blue),
+                            onPressed: () =>
+                                context.read<AppState>().disconnect(),
                           ),
                         ],
                       ),
@@ -337,7 +352,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                         // manual: onDrag fechava o teclado e parecia que "nao digita"
-                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.manual,
                         child: Column(
                           children: [
                             const SizedBox(height: 8),
@@ -351,11 +367,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 16),
                             Container(
-                              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+                              padding:
+                                  const EdgeInsets.fromLTRB(18, 18, 18, 18),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(22),
                                 color: Colors.white,
-                                border: Border.all(color: Brand.blue.withValues(alpha: 0.12)),
+                                border: Border.all(
+                                    color: Brand.blue.withValues(alpha: 0.12)),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Brand.blue.withValues(alpha: 0.12),
@@ -397,7 +415,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                               child: SizedBox(
                                                 height: 16,
                                                 width: 16,
-                                                child: CircularProgressIndicator(strokeWidth: 2, color: Brand.blue),
+                                                child:
+                                                    CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Brand.blue),
                                               ),
                                             )
                                           : null,
@@ -408,7 +429,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                           if (id == null) return null;
                                           return DropdownMenuItem<int>(
                                             value: id,
-                                            child: Text((u['name'] ?? '').toString()),
+                                            child: Text(
+                                                (u['name'] ?? '').toString()),
                                           );
                                         })
                                         .whereType<DropdownMenuItem<int>>()
@@ -417,8 +439,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ? null
                                         : (v) {
                                             setState(() => _userId = v);
-                                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                                              if (mounted) _senhaFocus.requestFocus();
+                                            WidgetsBinding.instance
+                                                .addPostFrameCallback((_) {
+                                              if (mounted)
+                                                _senhaFocus.requestFocus();
                                             });
                                           },
                                   ),
@@ -427,14 +451,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                     Text(
                                       'Aparelho vinculado a este vendedor. Para trocar, o retaguarda '
                                       'precisa autorizar o Reset da Base.',
-                                      style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade700),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blueGrey.shade700),
                                     ),
                                   ],
-                                  if (!_carregandoUsuarios && _empresaId != null && _usuarios.isEmpty) ...[
+                                  if (!_carregandoUsuarios &&
+                                      _empresaId != null &&
+                                      _usuarios.isEmpty) ...[
                                     const SizedBox(height: 8),
                                     Text(
                                       'Nenhum usuário com senha do app nesta empresa.\nNo ERP: Usuários → editar → “Senha app força de vendas”.',
-                                      style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange.shade800),
                                     ),
                                   ],
                                   const SizedBox(height: 14),
@@ -450,7 +480,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     smartQuotesType: SmartQuotesType.disabled,
                                     textInputAction: TextInputAction.done,
                                     enableInteractiveSelection: true,
-                                    decoration: _fieldDecoration('Senha do app'),
+                                    decoration:
+                                        _fieldDecoration('Senha do app'),
                                     onTap: () {
                                       if (!_senhaFocus.hasFocus) {
                                         _senhaFocus.requestFocus();
@@ -463,9 +494,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                     contentPadding: EdgeInsets.zero,
                                     dense: true,
                                     visualDensity: VisualDensity.compact,
-                                    controlAffinity: ListTileControlAffinity.leading,
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
                                     value: _salvarUsuario,
-                                    title: const Text('Salvar usuário', style: TextStyle(fontSize: 14)),
+                                    title: const Text('Salvar usuário',
+                                        style: TextStyle(fontSize: 14)),
                                     subtitle: const Text(
                                       'Mantém empresa e usuário ao sair',
                                       style: TextStyle(fontSize: 12),
@@ -473,7 +506,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     onChanged: (v) {
                                       setState(() {
                                         _salvarUsuario = v ?? false;
-                                        if (!_salvarUsuario) _usarDigital = false;
+                                        if (!_salvarUsuario)
+                                          _usarDigital = false;
                                       });
                                     },
                                   ),
@@ -482,16 +516,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                       contentPadding: EdgeInsets.zero,
                                       dense: true,
                                       visualDensity: VisualDensity.compact,
-                                      controlAffinity: ListTileControlAffinity.leading,
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
                                       value: _usarDigital && _salvarUsuario,
-                                      title: const Text('Usar digital do aparelho', style: TextStyle(fontSize: 14)),
+                                      title: const Text(
+                                          'Usar digital do aparelho',
+                                          style: TextStyle(fontSize: 14)),
                                       subtitle: const Text(
                                         'Próximo acesso com biometria',
                                         style: TextStyle(fontSize: 12),
                                       ),
                                       onChanged: !_salvarUsuario
                                           ? null
-                                          : (v) => setState(() => _usarDigital = v ?? false),
+                                          : (v) => setState(
+                                              () => _usarDigital = v ?? false),
                                     ),
                                   if (_erro != null) ...[
                                     const SizedBox(height: 8),
@@ -500,11 +538,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                       decoration: BoxDecoration(
                                         color: Colors.red.shade50,
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(color: Colors.red.shade200),
+                                        border: Border.all(
+                                            color: Colors.red.shade200),
                                       ),
                                       child: Text(
                                         _erro!,
-                                        style: TextStyle(color: Colors.red.shade800, fontSize: 13),
+                                        style: TextStyle(
+                                            color: Colors.red.shade800,
+                                            fontSize: 13),
                                       ),
                                     ),
                                   ],
@@ -513,18 +554,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: FilledButton.styleFrom(
                                       backgroundColor: Brand.blue,
                                       minimumSize: const Size.fromHeight(48),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
                                     ),
                                     onPressed: _entrando ? null : _entrar,
                                     child: _entrando
                                         ? const SizedBox(
                                             height: 22,
                                             width: 22,
-                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white),
                                           )
                                         : const Text(
                                             'Entrar',
-                                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700),
                                           ),
                                   ),
                                   if (_salvarUsuario &&
@@ -533,7 +580,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       _biometriaDisponivel) ...[
                                     const SizedBox(height: 8),
                                     OutlinedButton.icon(
-                                      onPressed: _entrando ? null : _entrarComDigital,
+                                      onPressed:
+                                          _entrando ? null : _entrarComDigital,
                                       icon: const Icon(Icons.fingerprint),
                                       label: const Text('Entrar com digital'),
                                       style: OutlinedButton.styleFrom(
@@ -549,7 +597,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             Text(
                               '$kAppName • $kAppVersionLabel',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.black.withValues(alpha: 0.38), fontSize: 12),
+                              style: TextStyle(
+                                  color: Colors.black.withValues(alpha: 0.38),
+                                  fontSize: 12),
                             ),
                           ],
                         ),
@@ -557,6 +607,76 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _consultarAtualizacao() async {
+    if (_consultandoAtualizacao) return;
+    setState(() => _consultandoAtualizacao = true);
+    try {
+      final resultado = await AppUpdater.instance.consultar(forcar: true);
+      if (!mounted) return;
+      setState(() => _consultandoAtualizacao = false);
+      final release = resultado.release;
+      if (release != null) {
+        await mostrarAtualizacaoDisponivel(context, release);
+        return;
+      }
+      if (!mounted) return;
+      final msg = resultado.falhou
+          ? 'Não foi possível consultar a atualização. Verifique a internet.'
+          : 'O aplicativo já está na versão mais recente.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _consultandoAtualizacao = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Não foi possível consultar a atualização. Verifique a internet.')),
+      );
+    }
+  }
+
+  Widget _botaoAtualizar() {
+    return Material(
+      color: Brand.blue.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: _consultandoAtualizacao ? null : _consultarAtualizacao,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Brand.blue.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_consultandoAtualizacao)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Brand.blue),
+                )
+              else
+                const Icon(Icons.system_update_alt,
+                    size: 14, color: Brand.blue),
+              const SizedBox(width: 4),
+              const Text(
+                'Atualizar',
+                style: TextStyle(
+                  color: Brand.blue,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

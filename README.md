@@ -71,49 +71,34 @@ Distribua o `app-release.apk` internamente (sem Play Store). Para 10 aparelhos p
 loja, o servidor já roda com múltiplos workers (`PHP_CLI_SERVER_WORKERS`) e bind em
 `0.0.0.0:8765`.
 
-## Gerar o APK na nuvem (Codemagic) — sem instalar nada local
+## Atualização oficial (GitHub Release)
 
-Esta pasta já vem pronta para o **Codemagic**:
+O canal oficial é a [GitHub Release](https://github.com/unitecnologia/unitec-forca-vendas/releases)
+deste repositório. O app consulta a Release mais recente ao abrir (no máximo uma vez
+a cada 24 h) e também pelo botão **Atualizar**, ao lado de Online na tela de entrar.
 
-- `codemagic.yaml` — workflow que gera a pasta `android/`, aplica o manifesto e
-  compila o APK release.
-- `ci/AndroidManifest.xml` — manifesto com as permissões (rede, localização,
-  internet) e `usesCleartextTraffic` (HTTP na LAN). O CI copia este arquivo por cima
-  do gerado pelo `flutter create`.
-- `.gitignore` — a pasta `android/` **não** é versionada (é gerada a cada build).
-
-Passos:
-
-1. Suba **o conteúdo desta pasta** (`apps/forca-vendas`) para um repositório Git
-   próprio (a raiz do repo deve conter `pubspec.yaml` e `codemagic.yaml`).
-2. No Codemagic: **Add application → conecte o repositório → selecione "Flutter App"**.
-   Ele detecta o `codemagic.yaml` automaticamente.
-3. (Opcional) Troque `TROQUE_PELO_SEU_EMAIL@exemplo.com` no `codemagic.yaml` pelo seu
-   e-mail, ou remova o bloco `publishing:` (o APK fica disponível para download na
-   página do build de qualquer forma).
-4. **Start new build** → ao terminar, baixe `app-release.apk` em *Artifacts*.
+Cada versão publicada leva o APK assinado e o arquivo `.sha256`. As notas precisam
+citar o `versionCode` (o número depois do `+` no `pubspec.yaml`).
 
 ## Atualizar o app no celular (sem desinstalar)
 
 O Android só aceita **atualização por cima** quando o novo APK tem:
 
-1. **O mesmo pacote** — `com.unitec.unitec_forca_vendas` (fixo no CI).
-2. **A mesma assinatura digital** — todos os builds do Codemagic usam
-   `ci/unitecfv-release.p12` (ou a keystore do grupo `keystore_credentials`).
-3. **`versionCode` maior** — o Codemagic usa o maior entre `BUILD_NUMBER` e o
-   número após o `+` no `pubspec.yaml` (ex.: `1.3.0+6` → mínimo 6).
+1. **O mesmo pacote** — `com.unitec.unitec_forca_vendas`.
+2. **A mesma assinatura digital** — `ci/unitecfv-release.p12` (alias `unitecfv`).
+3. **`versionCode` maior** — o número após o `+` no `pubspec.yaml`
+   (ex.: `1.4.31+83` → versionCode 83) e o mesmo valor em `lib/app_info.dart`.
 
 Se aparecer *"entra em conflito com um pacote já existente"* ou pedir para
 **desinstalar antes**, quase sempre é **assinatura diferente**: o APK antigo foi
-gerado com outra chave (build antigo do CI que criava keystore nova a cada vez,
+gerado com outra chave (build antigo que criava keystore nova a cada vez,
 APK de debug local, etc.).
 
-**O que fazer uma vez:** desinstale o app antigo, instale o APK novo do Codemagic.
+**O que fazer uma vez:** desinstale o app antigo e instale o APK da GitHub Release.
 Depois disso, as próximas versões instalam por cima normalmente (mesma chave).
 
-> A keystore de release fica em `ci/unitecfv-release.p12` (alias `unitecfv`).
-> Para trocar a chave no futuro, use o grupo `keystore_credentials` no Codemagic
-> — mas aí será necessário desinstalar nos aparelhos **uma vez** de novo.
+> A keystore de release fica em `ci/unitecfv-release.p12`. Trocar essa chave exige
+> desinstalar o app nos aparelhos **uma vez**.
 
 ## Estrutura
 
