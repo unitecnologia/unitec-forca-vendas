@@ -113,6 +113,8 @@ Map<String, dynamic> mapaItemPedido({
   double? descontoUnitario,
   double descontoValorLegado = 0,
   bool descontoLinhaFixa = false,
+  int? priceTableId,
+  String? tabelaNivel,
 }) {
   final linha = descontoEfetivo(
     quantidade: quantidade,
@@ -123,6 +125,7 @@ Map<String, dynamic> mapaItemPedido({
   );
   final percentual = descontoPercentual != null && descontoPercentual > 0;
   final unitario = descontoUnitario != null && descontoUnitario > 0;
+  final nivel = (tabelaNivel ?? '').trim().toLowerCase();
   return {
     'product_id': productId,
     'quantidade': quantidade,
@@ -131,5 +134,8 @@ Map<String, dynamic> mapaItemPedido({
     'descricao': descricao,
     if (unitario) 'desconto_unitario': descontoUnitario,
     if (descontoLinhaFixa && !percentual && !unitario) 'desconto_reais_modo': descontoReaisModoLinha,
+    if (priceTableId != null && priceTableId > 0) 'price_table_id': priceTableId,
+    if (nivel.isNotEmpty) 'tabela_nivel': nivel,
+    if (nivel.isNotEmpty) 'nivel': nivel,
   };
 }

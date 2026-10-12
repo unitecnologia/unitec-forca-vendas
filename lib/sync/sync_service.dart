@@ -250,11 +250,13 @@ class SyncService extends ChangeNotifier {
           'ativo': _b(r['ativo']),
           'updated_at': r['updated_at'],
         };
-    if (fullPull && products.isNotEmpty) {
+    if (fullPull) {
       await _db.replaceProducts(products, productMapper);
       AppLog.instance.info('sync', 'Produtos substituídos: ${products.length}');
     } else {
       await _db.upsertAll('products', products, productMapper);
+      // Tombstones do ERP (ativo/mostrar_no_app desligados) saem do catálogo local.
+      await _db.purgeProdutosForaDoCatalogo();
     }
 
     _checarBloqueio();
@@ -359,8 +361,14 @@ class SyncService extends ChangeNotifier {
           'ativo': _b(r['ativo']), 'updated_at': r['updated_at'],
         });
     await _db.upsertAll('price_table_items', data['price_table_items'] ?? [], (r) => {
-          'id': r['id'], 'product_id': r['product_id'], 'price_table_id': r['price_table_id'],
-          'valor': _d(r['valor']), 'fator': _d(r['fator']), 'updated_at': r['updated_at'],
+          'id': r['id'],
+          'product_id': r['product_id'],
+          'price_table_id': r['price_table_id'],
+          // Presença do item = nível habilitado; preço vem da Precificação.
+          'nivel': r['nivel'],
+          'valor': _d(r['valor']),
+          'fator': _d(r['fator']),
+          'updated_at': r['updated_at'],
         });
     await _db.upsertAll('vendedores', data['vendedores'] ?? [], (r) => {
           'id': r['id'],

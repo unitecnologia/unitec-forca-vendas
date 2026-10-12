@@ -20,7 +20,7 @@ class LocalDb {
   }
 
   /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
-  static Future<Database> openAtPath(String path, {int version = 22}) {
+  static Future<Database> openAtPath(String path, {int version = 23}) {
     return openDatabase(
       path,
       version: version,
@@ -135,6 +135,15 @@ class LocalDb {
       // Força pull completo para popular modo_prazo nas formas cacheadas.
       await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
     }
+    if (oldVersion < 23) {
+      final cols = await db.rawQuery('PRAGMA table_info(price_table_items)');
+      final hasNivel = cols.any((c) => c['name'] == 'nivel');
+      if (!hasNivel) {
+        await db.execute('ALTER TABLE price_table_items ADD COLUMN nivel TEXT');
+      }
+      // Pull completo: price_table_items agora traz nivel (habilitação Tab. Preço).
+      await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
+    }
   }
 
   /// Instância isolada (testes). Não usa o banco do aparelho.
@@ -177,7 +186,7 @@ class LocalDb {
         await db.execute('''
           CREATE TABLE price_table_items (
             id INTEGER PRIMARY KEY, product_id INTEGER, price_table_id INTEGER,
-            valor REAL, fator REAL, updated_at TEXT
+            nivel TEXT, valor REAL, fator REAL, updated_at TEXT
           )''');
         await db.execute('''
           CREATE TABLE vendedores (
@@ -402,6 +411,16 @@ class LocalDb {
         );
       }
     });
+  }
+
+  /// Remove do SQLite local produtos inativos ou com "Mostrar no App" desligado.
+  /// Pedidos/histórico locais não são afetados.
+  Future<void> purgeProdutosForaDoCatalogo() async {
+    final database = await db;
+    await database.delete(
+      'products',
+      where: 'ativo = 0 OR IFNULL(mostrar_no_app, 1) = 0',
+    );
   }
 
   /// Garante a tabela local de transportadoras (pedido pode abrir antes do sync).

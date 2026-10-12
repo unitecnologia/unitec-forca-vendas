@@ -22,6 +22,7 @@ import '../ui/pedido_envio_dialog.dart';
 import '../ui/produto_busca.dart';
 import '../ui/produto_list_card.dart';
 import '../ui/produto_foto_viewer.dart';
+import '../ui/tab_preco_sheet.dart';
 import '../ui/uppercase_input.dart';
 import '../payment/prazo_financeiro.dart';
 import '../pricing/item_desconto.dart';
@@ -38,6 +39,8 @@ class _ItemPedido {
     double? descontoPercentual,
     double? descontoUnitario,
     bool descontoLinhaFixa = false,
+    this.priceTableId,
+    this.tabelaNivel,
   })  : _descontoValor = desconto,
         _descontoPercentual = descontoPercentual,
         _descontoUnitario = (descontoUnitario != null && descontoUnitario > 0) ? descontoUnitario : null,
@@ -47,6 +50,10 @@ class _ItemPedido {
   final String descricao;
   double quantidade;
   final double precoUnitario;
+
+  /// Tab. Preço escolhida no lançamento (somente com usa_tab_preco).
+  final int? priceTableId;
+  final String? tabelaNivel;
 
   double? _descontoPercentual;
   double _descontoValor;
@@ -113,6 +120,8 @@ class _ItemPedido {
         descontoUnitario: _descontoUnitario,
         descontoValorLegado: _descontoValor,
         descontoLinhaFixa: descontoLinhaFixa,
+        priceTableId: priceTableId,
+        tabelaNivel: tabelaNivel,
       );
 }
 
@@ -286,6 +295,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           if (pid == null) continue;
           final unitRaw = (m['desconto_unitario'] as num?)?.toDouble();
           final modoLinha = m['desconto_reais_modo']?.toString() == descontoReaisModoLinha;
+          final nivel = (m['tabela_nivel'] ?? m['nivel'] ?? '').toString().trim();
           itens.add(_ItemPedido(
             productId: pid,
             descricao: (m['descricao'] ?? '').toString(),
@@ -294,6 +304,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             desconto: (m['desconto'] as num?)?.toDouble() ?? 0,
             descontoUnitario: unitRaw != null && unitRaw > 0 ? unitRaw : null,
             descontoLinhaFixa: modoLinha,
+            priceTableId: _asInt(m['price_table_id']),
+            tabelaNivel: nivel.isNotEmpty ? nivel.toLowerCase() : null,
           ));
         }
       }
@@ -807,8 +819,38 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     );
     if (produto == null || !mounted) return;
 
-    final preco = await _precoDoProduto(produto);
-    if (!mounted) return;
+    double preco;
+    int? priceTableId;
+    String? tabelaNivel;
+
+    if (ProductPreco.usaTabPreco(produto)) {
+      final opcoes = await ProductPreco.opcoesHabilitadas(produto, db: _db);
+      if (!mounted) return;
+      if (opcoes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Produto com Tab. Preço sem tabelas habilitadas. Revise o cadastro e sincronize.',
+            ),
+          ),
+        );
+        return;
+      }
+      final escolha = await showTabPrecoSheet(
+        context,
+        produtoNome: (produto['descricao'] ?? '').toString(),
+        opcoes: opcoes,
+        preferidoPriceTableId: _asInt(_listaPreco?['id']),
+      );
+      if (escolha == null || !mounted) return;
+      preco = escolha.preco;
+      priceTableId = escolha.priceTableId;
+      tabelaNivel = escolha.nivel;
+    } else {
+      preco = await _precoDoProduto(produto);
+      if (!mounted) return;
+    }
+
     final item = await showModalBottomSheet<_ItemPedido>(
       context: context,
       isScrollControlled: true,
@@ -820,6 +862,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         productId: produto['id'] as int,
         produto: produto,
         listaPreco: _listaPreco,
+        tabelaNivel: tabelaNivel,
+        priceTableId: priceTableId,
         descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
       ),
     );
@@ -849,6 +893,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         descontoEmReais: item.descontoEmReais,
         descontoLinhaFixa: item.descontoLinhaFixa,
         descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
+        tabelaNivel: item.tabelaNivel,
+        priceTableId: item.priceTableId,
         confirmLabel: 'Salvar alterações',
       ),
     );
@@ -1218,20 +1264,42 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return Scaffold(
       backgroundColor: Brand.bg,
       appBar: AppBar(
+        titleSpacing: 8,
         title: Text(
           titulo,
-          style: TextStyle(fontSize: 17 + Brand.textBump01cm, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w600, letterSpacing: 0.2),
         ),
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: Brand.blue,
         foregroundColor: Colors.white,
-        toolbarHeight: 48,
+        toolbarHeight: 44,
+        leadingWidth: 56,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Center(
+            child: Material(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => Navigator.maybePop(context),
+                child: const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
+          ),
+        ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(40),
+          preferredSize: const Size.fromHeight(36),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
             child: TabBar(
               controller: _tabController,
               indicatorSize: TabBarIndicatorSize.tab,
@@ -1241,12 +1309,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white60,
               labelPadding: EdgeInsets.zero,
-              labelStyle: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700, letterSpacing: 0.3),
-              unselectedLabelStyle: TextStyle(fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w500),
+              labelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w700, letterSpacing: 0.3),
+              unselectedLabelStyle: TextStyle(fontSize: 12.5 + Brand.textBump01cm, fontWeight: FontWeight.w500),
               tabs: [
-                Tab(height: 36, child: _tabLabel(1, 'Dados')),
-                Tab(height: 36, child: _tabLabel(2, 'Itens')),
-                Tab(height: 36, child: _tabLabel(3, 'Resumo')),
+                Tab(height: 32, child: _tabLabel(1, 'Dados')),
+                Tab(height: 32, child: _tabLabel(2, 'Itens')),
+                Tab(height: 32, child: _tabLabel(3, 'Resumo')),
               ],
             ),
           ),
@@ -1273,8 +1341,8 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 18,
-          height: 18,
+          width: 16,
+          height: 16,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: active ? Colors.white : Colors.white24,
@@ -1283,13 +1351,14 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
           child: Text(
             '$n',
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 9.5,
               fontWeight: FontWeight.w800,
+              height: 1,
               color: active ? Brand.blue : Colors.white70,
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 5),
         Text(label),
       ],
     );
@@ -1553,6 +1622,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     final pctItens = _brutoItens > 0 ? (_descontoItens / _brutoItens * 100) : 0.0;
     final descTotal = _descontoItens + _descontoPedido;
     final pctTotal = _brutoItens > 0 ? (descTotal / _brutoItens * 100) : 0.0;
+    final diasPrazo = _diasEfetivos();
+    final aVista = diasPrazo.isEmpty;
+    final formaLabel = _forma.trim().isEmpty ? '—' : _forma.trim();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
@@ -1600,10 +1672,12 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             child: Divider(height: 1, color: Color(0xFFE2E8F0)),
           ),
           _resumoRow('Valor total', brMoney(_total), destaque: true, compacto: true),
+          _resumoRow('Forma de pagamento', formaLabel, compacto: true),
         ]),
-        _section(icon: Icons.calendar_month_outlined, titulo: 'Parcelas', filhos: [
-          _parcelasResumo(),
-        ]),
+        if (!aVista)
+          _section(icon: Icons.calendar_month_outlined, titulo: 'Parcelas', filhos: [
+            _parcelasResumo(diasPrazo),
+          ]),
         _section(icon: Icons.notes_outlined, titulo: 'Observações', filhos: [
           _botaoObservacao(
             icone: Icons.edit_note_outlined,
@@ -1811,12 +1885,11 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     return diasPrazoFinanceiroDaForma(_formaById(_formaId)) ?? const <int>[];
   }
 
-  Widget _parcelasResumo() {
-    final dias = _diasEfetivos();
-    final base = dias.isEmpty ? <int>[0] : dias;
-    final n = base.length;
+  Widget _parcelasResumo(List<int> dias) {
+    if (dias.isEmpty) return const SizedBox.shrink();
+
+    final n = dias.length;
     final total = _total;
-    final forma = _forma.trim().isEmpty ? '—' : _forma.trim();
     final hoje = DateTime.now();
 
     // Divide o total em centavos para evitar diferença de arredondamento;
@@ -1828,34 +1901,30 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       final valor = i == n - 1
           ? double.parse((total - parcelaBase * (n - 1)).toStringAsFixed(2))
           : parcelaBase;
-      final venc = hoje.add(Duration(days: base[i]));
+      final venc = hoje.add(Duration(days: dias[i]));
       linhas.add(Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('${i + 1}ª — ${_fmtData(venc)}',
-                      style: TextStyle(
-                          fontSize: 12 + Brand.textBump01cm,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF334155),
-                          height: 1.2)),
-                  Text(forma,
-                      style: TextStyle(
-                          fontSize: 10 + Brand.textBump01cm,
-                          color: Color(0xFF94A3B8),
-                          height: 1.2)),
-                ],
+              child: Text(
+                '${i + 1}ª — ${_fmtData(venc)}',
+                style: TextStyle(
+                  fontSize: 12 + Brand.textBump01cm,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF334155),
+                  height: 1.2,
+                ),
               ),
             ),
-            Text(brMoney(valor),
-                style: TextStyle(
-                    fontSize: 13 + Brand.textBump01cm, fontWeight: FontWeight.w700, color: Brand.green)),
+            Text(
+              brMoney(valor),
+              style: TextStyle(
+                fontSize: 13 + Brand.textBump01cm,
+                fontWeight: FontWeight.w700,
+                color: Brand.green,
+              ),
+            ),
           ],
         ),
       ));
@@ -1867,12 +1936,15 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
-          child: Text('$n parcela${n > 1 ? 's' : ''}',
-              style: TextStyle(
-                  fontSize: 10 + Brand.textBump01cm,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  color: Color(0xFF64748B))),
+          child: Text(
+            '$n parcela${n > 1 ? 's' : ''}',
+            style: TextStyle(
+              fontSize: 10 + Brand.textBump01cm,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+              color: const Color(0xFF64748B),
+            ),
+          ),
         ),
         ...linhas,
       ],
@@ -1881,61 +1953,97 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
 
   // ---- Barra de ações ----------------------------------------------------
   Widget _barraAcoes() {
+    ButtonStyle btnStyle(Color bg) => FilledButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: bg.withValues(alpha: 0.45),
+          disabledForegroundColor: Colors.white70,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          textStyle: TextStyle(fontSize: 14 + Brand.textBump01cm, fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          visualDensity: VisualDensity.standard,
+        );
+
     return SafeArea(
       child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: const BoxDecoration(
           color: Colors.white,
           boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, -2))],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Total', style: TextStyle(fontSize: 11 + Brand.textBump01cm, color: Colors.black54)),
-                  Text(brMoney(_total),
-                      style: TextStyle(fontSize: 18 + Brand.textBump01cm, fontWeight: FontWeight.w800, color: Brand.green)),
+                  Text(
+                    'Valor total',
+                    style: TextStyle(
+                      fontSize: 12 + Brand.textBump01cm,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  Text(
+                    brMoney(_total),
+                    style: TextStyle(
+                      fontSize: 22 + Brand.textBump01cm,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                      color: Brand.green,
+                    ),
+                  ),
                 ],
               ),
             ),
-            Transform.translate(
-              offset: const Offset(0, -Brand.textBump01cm), // sobe ~0,10 cm
-              child: _somenteLeitura
-                  ? FilledButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                      label: const Text('Fechar'),
-                      style: FilledButton.styleFrom(backgroundColor: Brand.blue),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _salvando ? null : () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                          label: const Text('Cancelar'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          onPressed: _salvando ? null : _salvar,
-                          icon: _salvando
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : Icon(_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
-                                  ? Icons.qr_code_2
-                                  : Icons.save_outlined),
-                          label: Text(_salvando
-                              ? 'Salvando...'
-                              : (_tipo == 'pedido' && _isFormaPix() && context.read<AppState>().config.pixApiHabilitada
-                                  ? 'Gerar Pix'
-                                  : 'Salvar')),
-                          style: FilledButton.styleFrom(backgroundColor: Brand.green),
-                        ),
-                      ],
-                    ),
-            ),
+            const SizedBox(width: 10),
+            if (_somenteLeitura)
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, size: 20),
+                label: const Text('Fechar'),
+                style: btnStyle(Brand.blue),
+              )
+            else ...[
+              FilledButton.icon(
+                onPressed: _salvando ? null : () => Navigator.pop(context),
+                icon: const Icon(Icons.close, size: 20),
+                label: const Text('Cancelar'),
+                style: btnStyle(const Color(0xFFDC2626)),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: _salvando ? null : _salvar,
+                icon: _salvando
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Icon(
+                        _tipo == 'pedido' &&
+                                _isFormaPix() &&
+                                context.read<AppState>().config.pixApiHabilitada
+                            ? Icons.qr_code_2
+                            : Icons.save_outlined,
+                        size: 20,
+                      ),
+                label: Text(
+                  _salvando
+                      ? 'Salvando...'
+                      : (_tipo == 'pedido' &&
+                              _isFormaPix() &&
+                              context.read<AppState>().config.pixApiHabilitada
+                          ? 'Gerar Pix'
+                          : 'Salvar'),
+                ),
+                style: btnStyle(Brand.green),
+              ),
+            ],
           ],
         ),
       ),
@@ -2664,6 +2772,8 @@ class _ItemFormSheet extends StatefulWidget {
     this.confirmLabel = 'Incluir item',
     this.produto,
     this.listaPreco,
+    this.tabelaNivel,
+    this.priceTableId,
   });
 
   final int productId;
@@ -2684,6 +2794,10 @@ class _ItemFormSheet extends StatefulWidget {
   final String confirmLabel;
   final Map<String, dynamic>? produto;
   final Map<String, dynamic>? listaPreco;
+
+  /// Nível confirmado da Tab. Preço (trava o preço na Precificação desse nível).
+  final String? tabelaNivel;
+  final int? priceTableId;
 
   @override
   State<_ItemFormSheet> createState() => _ItemFormSheetState();
@@ -2739,6 +2853,24 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   Future<void> _atualizarPrecoPorQtd() async {
     final produto = widget.produto;
     if (produto == null) return;
+    // Tab. Preço: preço fixo do nível escolhido (não muda com qtd. atacado).
+    if (widget.tabelaNivel != null && widget.tabelaNivel!.isNotEmpty) {
+      final novo = ProductPreco.precoDoNivel(produto, widget.tabelaNivel!);
+      if (!mounted) return;
+      if ((novo - _precoUnitario).abs() > 0.0001) {
+        setState(() => _precoUnitario = novo);
+        if (_modoUnitario) {
+          _espelharPercentualDoUnitario();
+          setState(() {});
+        } else if (_modoLinha) {
+          _espelharPercentualDaLinha();
+          setState(() {});
+        } else {
+          _syncFromPct();
+        }
+      }
+      return;
+    }
     final novo = await ProductPreco.resolve(
       produto,
       listaPreco: widget.listaPreco,
@@ -2912,6 +3044,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
     final pct = _parseNum(_descPct.text);
     final valorCampo = _parseNum(_descValor.text);
+    final nivel = widget.tabelaNivel;
+    final tableId = widget.priceTableId;
     final _ItemPedido item;
     if (_modoUnitario) {
       final unit = descontoUnitarioAplicado(valorCampo, _precoUnitario);
@@ -2921,6 +3055,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         quantidade: qtd,
         precoUnitario: _precoUnitario,
         descontoUnitario: unit > 0 ? unit : null,
+        priceTableId: tableId,
+        tabelaNivel: nivel,
       );
     } else if (_modoLinha) {
       final linha = descontoLinhaValorInformado(valorCampo, qtd * _precoUnitario);
@@ -2931,6 +3067,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         precoUnitario: _precoUnitario,
         desconto: linha,
         descontoLinhaFixa: linha > 0,
+        priceTableId: tableId,
+        tabelaNivel: nivel,
       );
     } else {
       item = _ItemPedido(
@@ -2940,6 +3078,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         precoUnitario: _precoUnitario,
         descontoPercentual: pct > 0 ? pct : null,
         desconto: pct > 0 ? 0 : valorCampo,
+        priceTableId: tableId,
+        tabelaNivel: nivel,
       );
     }
 
