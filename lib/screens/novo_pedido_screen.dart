@@ -3093,6 +3093,18 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     );
   }
 
+  /// Seleciona todo o valor ao entrar no campo (toque/clique), para a digitação
+  /// substituir o conteúdo. Não roda durante a digitação nem pelos botões +/-.
+  void _selecionarConteudoAoEntrar(TextEditingController controller) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: controller.text.length,
+      );
+    });
+  }
+
   void _confirmar() {
     final qtd = _quantidade;
     if (qtd <= 0) return;
@@ -3228,6 +3240,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                               borderRadius: BorderRadius.all(Radius.circular(12)),
                             ),
                           ),
+                          onTap: () => _selecionarConteudoAoEntrar(_preco),
                           onChanged: _onPrecoChanged,
                         )
                       : Row(
@@ -3256,6 +3269,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                           filled: true,
                           border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                         ),
+                        onTap: () => _selecionarConteudoAoEntrar(_qtd),
                         onChanged: (_) => _reagirQuantidade(),
                       ),
                     ),
@@ -3282,6 +3296,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                                 filled: true,
                                 border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                               ),
+                              onTap: () => _selecionarConteudoAoEntrar(_descPct),
                               onChanged: (_) => _syncFromPct(),
                             ),
                           ),
@@ -3308,6 +3323,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                                 filled: true,
                                 border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                               ),
+                              onTap: () => _selecionarConteudoAoEntrar(_descValor),
                               onChanged: (_) => _syncFromValor(),
                             ),
                           ),
