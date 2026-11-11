@@ -41,6 +41,7 @@ class _ItemPedido {
     bool descontoLinhaFixa = false,
     this.priceTableId,
     this.tabelaNivel,
+    this.precoOriginal,
   })  : _descontoValor = desconto,
         _descontoPercentual = descontoPercentual,
         _descontoUnitario = (descontoUnitario != null && descontoUnitario > 0) ? descontoUnitario : null,
@@ -50,6 +51,9 @@ class _ItemPedido {
   final String descricao;
   double quantidade;
   final double precoUnitario;
+
+  /// Preço de catálogo/tabela antes da edição manual (auditoria / sync).
+  final double? precoOriginal;
 
   /// Tab. Preço escolhida no lançamento (somente com usa_tab_preco).
   final int? priceTableId;
@@ -122,6 +126,7 @@ class _ItemPedido {
         descontoLinhaFixa: descontoLinhaFixa,
         priceTableId: priceTableId,
         tabelaNivel: tabelaNivel,
+        precoOriginal: precoOriginal,
       );
 }
 
@@ -306,6 +311,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
             descontoLinhaFixa: modoLinha,
             priceTableId: _asInt(m['price_table_id']),
             tabelaNivel: nivel.isNotEmpty ? nivel.toLowerCase() : null,
+            precoOriginal: (m['preco_original'] as num?)?.toDouble(),
           ));
         }
       }
@@ -865,6 +871,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         tabelaNivel: tabelaNivel,
         priceTableId: priceTableId,
         descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
+        permitirAlterarPreco: context.read<AppState>().config.alterarPrecoUnitario,
       ),
     );
     if (item == null) return;
@@ -887,6 +894,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         productId: item.productId,
         descricao: item.descricao,
         precoUnitario: item.precoUnitario,
+        precoOriginal: item.precoOriginal,
         quantidadeInicial: item.quantidade,
         descontoPctInicial: item.descontoPercentualExibicao,
         descontoValorInicial: item.descontoValorExibicao,
@@ -895,6 +903,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
         descontoReaisModo: context.read<AppState>().config.descontoReaisItemModo,
         tabelaNivel: item.tabelaNivel,
         priceTableId: item.priceTableId,
+        permitirAlterarPreco: context.read<AppState>().config.alterarPrecoUnitario,
         confirmLabel: 'Salvar alterações',
       ),
     );
@@ -2763,12 +2772,14 @@ class _ItemFormSheet extends StatefulWidget {
     required this.productId,
     required this.descricao,
     required this.precoUnitario,
+    this.precoOriginal,
     this.quantidadeInicial = 1,
     this.descontoPctInicial = 0,
     this.descontoValorInicial = 0,
     this.descontoEmReais = false,
     this.descontoLinhaFixa = false,
     this.descontoReaisModo = descontoReaisModoUnitario,
+    this.permitirAlterarPreco = false,
     this.confirmLabel = 'Incluir item',
     this.produto,
     this.listaPreco,
@@ -2779,6 +2790,9 @@ class _ItemFormSheet extends StatefulWidget {
   final int productId;
   final String descricao;
   final double precoUnitario;
+
+  /// Catálogo/tabela salvo anteriormente (edição de item com preço negociado).
+  final double? precoOriginal;
   final double quantidadeInicial;
   final double descontoPctInicial;
   final double descontoValorInicial;
@@ -2791,6 +2805,9 @@ class _ItemFormSheet extends StatefulWidget {
 
   /// Parâmetro da empresa: unitario ou linha. Só vale para digitação nova em R$.
   final String descontoReaisModo;
+
+  /// Parâmetro da empresa: permite digitar o preço unitário nesta venda.
+  final bool permitirAlterarPreco;
   final String confirmLabel;
   final Map<String, dynamic>? produto;
   final Map<String, dynamic>? listaPreco;
@@ -2807,8 +2824,12 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   late final TextEditingController _qtd;
   late final TextEditingController _descPct;
   late final TextEditingController _descValor;
+  late final TextEditingController _preco;
   late double _precoUnitario;
+  late double _precoCatalogo;
+  bool _precoManual = false;
   bool _sincDesc = false;
+  bool _sincPreco = false;
 
   /// null: modo %. unitario: R$ por unidade. linha: R$ fixo da linha.
   String? _reaisModo;
@@ -2826,6 +2847,11 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   void initState() {
     super.initState();
     _precoUnitario = widget.precoUnitario;
+    _precoCatalogo = widget.precoOriginal ?? widget.precoUnitario;
+    if (widget.precoOriginal != null &&
+        (widget.precoOriginal! - widget.precoUnitario).abs() > 0.009) {
+      _precoManual = true;
+    }
     if (widget.descontoEmReais) {
       _reaisModo = descontoReaisModoUnitario;
     } else if (widget.descontoLinhaFixa) {
@@ -2834,6 +2860,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     _qtd = TextEditingController(text: _fmtQtd(widget.quantidadeInicial));
     _descPct = TextEditingController(text: _fmtNum(widget.descontoPctInicial));
     _descValor = TextEditingController(text: _fmtNum(widget.descontoValorInicial));
+    _preco = TextEditingController(text: _fmtNum(_precoUnitario));
   }
 
   @override
@@ -2841,6 +2868,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     _qtd.dispose();
     _descPct.dispose();
     _descValor.dispose();
+    _preco.dispose();
     super.dispose();
   }
 
@@ -2851,6 +2879,9 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   double get _bruto => _quantidade * _precoUnitario;
 
   Future<void> _atualizarPrecoPorQtd() async {
+    // Preço digitado pelo vendedor não deve ser sobrescrito pela tabela/qtd.
+    if (_precoManual) return;
+
     final produto = widget.produto;
     if (produto == null) return;
     // Tab. Preço: preço fixo do nível escolhido (não muda com qtd. atacado).
@@ -2858,16 +2889,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       final novo = ProductPreco.precoDoNivel(produto, widget.tabelaNivel!);
       if (!mounted) return;
       if ((novo - _precoUnitario).abs() > 0.0001) {
-        setState(() => _precoUnitario = novo);
-        if (_modoUnitario) {
-          _espelharPercentualDoUnitario();
-          setState(() {});
-        } else if (_modoLinha) {
-          _espelharPercentualDaLinha();
-          setState(() {});
-        } else {
-          _syncFromPct();
-        }
+        _aplicarPrecoCatalogo(novo);
       }
       return;
     }
@@ -2878,16 +2900,49 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     );
     if (!mounted) return;
     if ((novo - _precoUnitario).abs() > 0.0001) {
-      setState(() => _precoUnitario = novo);
-      if (_modoUnitario) {
-        _espelharPercentualDoUnitario();
-        setState(() {});
-      } else if (_modoLinha) {
-        _espelharPercentualDaLinha();
-        setState(() {});
-      } else {
-        _syncFromPct();
-      }
+      _aplicarPrecoCatalogo(novo);
+    }
+  }
+
+  void _aplicarPrecoCatalogo(double novo) {
+    _precoCatalogo = novo;
+    setState(() => _precoUnitario = novo);
+    _sincPreco = true;
+    _preco.text = _fmtNum(novo);
+    _sincPreco = false;
+    if (_modoUnitario) {
+      _espelharPercentualDoUnitario();
+      setState(() {});
+    } else if (_modoLinha) {
+      _espelharPercentualDaLinha();
+      setState(() {});
+    } else {
+      _syncFromPct();
+    }
+  }
+
+  void _onPrecoChanged(String raw) {
+    if (_sincPreco || !widget.permitirAlterarPreco) return;
+    final novo = _parseNum(raw);
+    if (novo <= 0) {
+      setState(() {
+        _precoManual = true;
+        _precoUnitario = 0;
+      });
+      return;
+    }
+    setState(() {
+      _precoManual = true;
+      _precoUnitario = novo;
+    });
+    if (_modoUnitario) {
+      _espelharPercentualDoUnitario();
+      setState(() {});
+    } else if (_modoLinha) {
+      _espelharPercentualDaLinha();
+      setState(() {});
+    } else {
+      _syncFromPct();
     }
   }
 
@@ -3042,44 +3097,64 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
     final qtd = _quantidade;
     if (qtd <= 0) return;
 
+    final precoInformado = widget.permitirAlterarPreco ? _parseNum(_preco.text) : _precoUnitario;
+    if (precoInformado <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um preço unitário válido.')),
+      );
+      return;
+    }
+
+    final precoFinal = dinheiroCentavos(precoInformado);
+    final original = (_precoManual ||
+            (widget.precoOriginal != null &&
+                (widget.precoOriginal! - precoFinal).abs() > 0.009))
+        ? dinheiroCentavos(_precoCatalogo)
+        : null;
+    final precoOriginalEnvio =
+        original != null && (original - precoFinal).abs() > 0.009 ? original : null;
+
     final pct = _parseNum(_descPct.text);
     final valorCampo = _parseNum(_descValor.text);
     final nivel = widget.tabelaNivel;
     final tableId = widget.priceTableId;
     final _ItemPedido item;
     if (_modoUnitario) {
-      final unit = descontoUnitarioAplicado(valorCampo, _precoUnitario);
+      final unit = descontoUnitarioAplicado(valorCampo, precoFinal);
       item = _ItemPedido(
         productId: widget.productId,
         descricao: widget.descricao,
         quantidade: qtd,
-        precoUnitario: _precoUnitario,
+        precoUnitario: precoFinal,
         descontoUnitario: unit > 0 ? unit : null,
         priceTableId: tableId,
         tabelaNivel: nivel,
+        precoOriginal: precoOriginalEnvio,
       );
     } else if (_modoLinha) {
-      final linha = descontoLinhaValorInformado(valorCampo, qtd * _precoUnitario);
+      final linha = descontoLinhaValorInformado(valorCampo, qtd * precoFinal);
       item = _ItemPedido(
         productId: widget.productId,
         descricao: widget.descricao,
         quantidade: qtd,
-        precoUnitario: _precoUnitario,
+        precoUnitario: precoFinal,
         desconto: linha,
         descontoLinhaFixa: linha > 0,
         priceTableId: tableId,
         tabelaNivel: nivel,
+        precoOriginal: precoOriginalEnvio,
       );
     } else {
       item = _ItemPedido(
         productId: widget.productId,
         descricao: widget.descricao,
         quantidade: qtd,
-        precoUnitario: _precoUnitario,
+        precoUnitario: precoFinal,
         descontoPercentual: pct > 0 ? pct : null,
         desconto: pct > 0 ? 0 : valorCampo,
         priceTableId: tableId,
         tabelaNivel: nivel,
+        precoOriginal: precoOriginalEnvio,
       );
     }
 
@@ -3133,13 +3208,37 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(brMoney(_precoUnitario),
-                          style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue)),
-                    ],
-                  ),
+                  child: widget.permitirAlterarPreco
+                      ? TextField(
+                          controller: _preco,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            color: Brand.blue,
+                            height: 24 / 18,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Preço unitário',
+                            prefixText: 'R\$ ',
+                            filled: true,
+                            isDense: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(12)),
+                            ),
+                          ),
+                          onChanged: _onPrecoChanged,
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              brMoney(_precoUnitario),
+                              style: TextStyle(fontWeight: FontWeight.w800, color: Brand.blue),
+                            ),
+                          ],
+                        ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -3316,14 +3415,11 @@ class _BuscaSheetState extends State<_BuscaSheet> {
   }
 
   Future<void> _carregarGrupos() async {
-    // Fonte oficial: cadastro de Grupos do ERP (sincronizado).
-    // Fallback: DISTINCT nos produtos (sem tabela local / sync antigo).
+    // Só cadastro de Grupos do ERP (sync → tabela grupos). Sem fallback em products.
     var nomes = <String>[];
-
     try {
       final rows = await _db.query(
-        "SELECT nome FROM grupos WHERE (ativo = 1 OR ativo IS NULL) "
-        "AND (mostrar_no_app = 1 OR mostrar_no_app IS NULL) "
+        "SELECT nome FROM grupos WHERE ativo = 1 AND mostrar_no_app = 1 "
         "AND nome IS NOT NULL AND TRIM(nome) <> '' ORDER BY nome",
       );
       nomes = rows
@@ -3331,22 +3427,7 @@ class _BuscaSheetState extends State<_BuscaSheet> {
           .where((g) => g.isNotEmpty)
           .toList();
     } catch (_) {
-      // Tabela grupos ausente — usa fallback abaixo.
-    }
-
-    if (nomes.isEmpty) {
-      try {
-        final rows = await _db.query(
-          "SELECT DISTINCT grupo AS nome FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
-          "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
-        );
-        nomes = rows
-            .map((r) => (r['nome'] ?? '').toString().trim())
-            .where((g) => g.isNotEmpty)
-            .toList();
-      } catch (_) {
-        nomes = [];
-      }
+      nomes = [];
     }
 
     if (!mounted) return;

@@ -1,16 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_info.dart';
 import '../ui/brand.dart';
 import 'app_updater.dart';
 
-enum _Etapa { oferta, baixando, permissao, instalador, erro }
+enum _Etapa { oferta, baixando, permissao, erro }
 
 /// Modal "Nova versão disponível": baixa, valida (SHA-256) e abre o instalador.
+/// O modal fecha antes do instalador Android — nunca fica atrás dele.
 Future<void> mostrarAtualizacaoDisponivel(BuildContext context, AppRelease release) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
+    useRootNavigator: true,
     builder: (_) => _UpdateDialog(release: release),
   );
 }
@@ -31,6 +34,8 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
   int _total = 0;
   String? _arquivo;
   String _erro = '';
+  bool _abrindoInstalador = false;
+  bool _aguardandoPermissao = false;
 
   @override
   void initState() {
@@ -47,8 +52,12 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Voltou da tela "Permitir desta fonte": segue para o instalador se liberou.
-    if (state == AppLifecycleState.resumed && _etapa == _Etapa.permissao) {
-      _instalar();
+    if (state == AppLifecycleState.resumed &&
+        _aguardandoPermissao &&
+        _etapa == _Etapa.permissao &&
+        !_abrindoInstalador) {
+      _aguardandoPermissao = false;
+      _abrirInstalador();
     }
   }
 
@@ -58,6 +67,7 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
       _etapa = _Etapa.baixando;
       _recebido = 0;
       _total = widget.release.apkSize;
+      _erro = '';
     });
     try {
       _arquivo = await _updater.baixar(widget.release, progresso: (recebido, total) {
@@ -67,7 +77,7 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
           _total = total;
         });
       });
-      await _instalar();
+      await _abrirInstalador();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -77,22 +87,57 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
     }
   }
 
-  Future<void> _instalar() async {
+  /// Fecha o modal e só então abre o instalador Android.
+  Future<void> _abrirInstalador() async {
     final arquivo = _arquivo;
-    if (arquivo == null) return;
+    if (arquivo == null || _abrindoInstalador) return;
+
     try {
       if (!await _updater.podeInstalar()) {
-        if (mounted) setState(() => _etapa = _Etapa.permissao);
+        if (mounted) {
+          setState(() {
+            _etapa = _Etapa.permissao;
+            _aguardandoPermissao = false;
+          });
+        }
         return;
       }
-      await _updater.instalar(arquivo);
-      if (mounted) setState(() => _etapa = _Etapa.instalador);
+
+      if (!mounted) return;
+      _abrindoInstalador = true;
+
+      // Fecha o diálogo interno antes do instalador (evita overlay atrás).
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) nav.pop();
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      try {
+        final ok = await _updater.instalar(arquivo);
+        if (!ok) {
+          debugPrint('Atualização: instalador não abriu (arquivo inválido ou URI).');
+        }
+      } catch (e) {
+        debugPrint('Atualização: falha ao abrir instalador ($e)');
+      }
     } catch (_) {
+      _abrindoInstalador = false;
       if (!mounted) return;
       setState(() {
         _erro = 'Não foi possível abrir o instalador do Android.';
         _etapa = _Etapa.erro;
       });
+    }
+  }
+
+  Future<void> _abrirPermissao() async {
+    _aguardandoPermissao = true;
+    await _updater.abrirPermissaoInstalacao();
+  }
+
+  void _fechar() {
+    _aguardandoPermissao = false;
+    if (Navigator.of(context, rootNavigator: true).canPop()) {
+      Navigator.of(context, rootNavigator: true).pop();
     }
   }
 
@@ -102,6 +147,9 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
   Widget build(BuildContext context) {
     return PopScope(
       canPop: _etapa != _Etapa.baixando,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _etapa != _Etapa.baixando) _fechar();
+      },
       child: AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -132,10 +180,11 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Versão instalada: $kAppVersion', style: TextStyle(fontSize: 15)),
+        const Text('Versão instalada: $kAppVersion ($kAppBuild)', style: TextStyle(fontSize: 15)),
         const SizedBox(height: 4),
         Text(
-          'Nova versão: ${widget.release.versionName}',
+          'Nova versão: ${widget.release.versionName}'
+          '${widget.release.versionCode != null ? ' (${widget.release.versionCode})' : ''}',
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Brand.blue),
         ),
       ],
@@ -192,20 +241,6 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
             ),
           ],
         );
-      case _Etapa.instalador:
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _versoes(),
-            const SizedBox(height: 12),
-            const Text(
-              'Confirme a atualização na tela do Android. '
-              'Se fechou sem atualizar, toque em "Instalar".',
-              style: TextStyle(fontSize: 14),
-            ),
-          ],
-        );
       case _Etapa.erro:
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -222,7 +257,7 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
   Widget _botoes() {
     final fechar = _botaoSecundario(
       _etapa == _Etapa.oferta ? 'Mais tarde' : 'Fechar',
-      () => Navigator.of(context).pop(),
+      _fechar,
     );
     switch (_etapa) {
       case _Etapa.oferta:
@@ -232,10 +267,8 @@ class _UpdateDialogState extends State<_UpdateDialog> with WidgetsBindingObserve
       case _Etapa.permissao:
         return _linha(
           fechar,
-          _botaoPrimario('Abrir configuração', Icons.settings, _updater.abrirPermissaoInstalacao),
+          _botaoPrimario('Abrir configuração', Icons.settings, _abrirPermissao),
         );
-      case _Etapa.instalador:
-        return _linha(fechar, _botaoPrimario('Instalar', Icons.install_mobile, _instalar));
       case _Etapa.erro:
         return _linha(fechar, _botaoPrimario('Tentar de novo', Icons.refresh, _atualizar));
     }

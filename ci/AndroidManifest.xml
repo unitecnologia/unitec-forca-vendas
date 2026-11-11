@@ -11,10 +11,19 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
+    <!--
+      Sem Auto Backup / transferência aparelho-a-aparelho: reinstalação começa limpa.
+      Atualização in-place do APK NÃO apaga dados (prefs, SQLite, fila de pedidos).
+      Android 12+: allowBackup=false sozinho não desliga device-transfer — por isso
+      dataExtractionRules exclui cloud-backup e device-transfer.
+    -->
     <application
         android:label="Força de Vendas"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="true">
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"

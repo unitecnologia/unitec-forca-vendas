@@ -119,7 +119,18 @@ void main() {
     expect(item['preco_unitario'], 12.50);
     expect(item['desconto'], 10);
     expect(item['desconto'], isNot(1));
+    expect(item.containsKey('preco_original'), isFalse);
     expect(totalLiquidoItem(10, 12.50, item['desconto'] as double), 115);
+
+    final negociado = mapaItemPedido(
+      productId: 9,
+      descricao: 'Produto',
+      quantidade: 2,
+      precoUnitario: 30,
+      precoOriginal: 36,
+    );
+    expect(negociado['preco_unitario'], 30);
+    expect(negociado['preco_original'], 36);
 
     final item40 = mapaItemPedido(
       productId: 9,

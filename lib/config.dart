@@ -24,6 +24,7 @@ class AppConfig {
     this.caixaNome = '',
     this.pixApiHabilitada = false,
     this.verTodosClientes = false,
+    this.alterarPrecoUnitario = false,
     this.descontoReaisItemModo = descontoReaisModoUnitario,
     this.impValorLiquido = false,
     this.impSemColunaDesconto = true,
@@ -64,6 +65,9 @@ class AppConfig {
 
   /// Empresa liberou base aberta no Força de Vendas (todos os clientes no app).
   bool verTodosClientes;
+
+  /// Empresa liberou alteração de preço unitário no item (App Força de Vendas).
+  bool alterarPrecoUnitario;
 
   /// Empresa → Monitor de vendas: unitario ou linha. Não altera o modo %.
   String descontoReaisItemModo;
@@ -130,6 +134,7 @@ class AppConfig {
         'caixaNome': caixaNome,
         'pixApiHabilitada': pixApiHabilitada,
         'verTodosClientes': verTodosClientes,
+        'alterarPrecoUnitario': alterarPrecoUnitario,
         'descontoReaisItemModo': descontoReaisItemModo,
         'impValorLiquido': impValorLiquido,
         'impSemColunaDesconto': impSemColunaDesconto,
@@ -166,6 +171,7 @@ class AppConfig {
         caixaNome: j['caixaNome'] ?? '',
         pixApiHabilitada: j['pixApiHabilitada'] == true,
         verTodosClientes: j['verTodosClientes'] == true,
+        alterarPrecoUnitario: j['alterarPrecoUnitario'] == true,
         descontoReaisItemModo: normalizarDescontoReaisItemModo(j['descontoReaisItemModo']),
         impValorLiquido: j['impValorLiquido'] == true,
         impSemColunaDesconto: j.containsKey('impSemColunaDesconto')
@@ -233,6 +239,7 @@ class AppConfig {
     caixaNome = limpo.caixaNome;
     pixApiHabilitada = limpo.pixApiHabilitada;
     verTodosClientes = limpo.verTodosClientes;
+    alterarPrecoUnitario = limpo.alterarPrecoUnitario;
     descontoReaisItemModo = limpo.descontoReaisItemModo;
     impValorLiquido = limpo.impValorLiquido;
     impSemColunaDesconto = limpo.impSemColunaDesconto;
@@ -251,7 +258,7 @@ class AppConfig {
 
   /// Limpa apenas a sessão (mantém a conexão e a autorização do aparelho).
   /// Com [rememberUser], empresa, usuário e vínculo do vendedor ficam para login offline.
-  /// [verTodosClientes] e as flags de impressão são regra da empresa — não zeram no logout.
+  /// [verTodosClientes], [alterarPrecoUnitario] e as flags de impressão são regra da empresa — não zeram no logout.
   void clearSession() {
     token = '';
     if (!rememberUser) {

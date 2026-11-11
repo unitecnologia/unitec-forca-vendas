@@ -521,6 +521,7 @@ class AppState extends ChangeNotifier {
       config.caixaNome = (user['caixa_nome'] ?? '').toString();
       config.pixApiHabilitada = user['pix_api_habilitada'] == true;
       config.verTodosClientes = user['ver_todos_clientes'] == true;
+      config.alterarPrecoUnitario = user['alterar_preco_unitario'] == true;
       if (user.containsKey('desconto_reais_item_modo')) {
         config.descontoReaisItemModo = normalizarDescontoReaisItemModo(user['desconto_reais_item_modo']);
       }
@@ -683,6 +684,7 @@ class AppState extends ChangeNotifier {
       ..empresaNome = ''
       ..cachedToken = ''
       ..verTodosClientes = false
+      ..alterarPrecoUnitario = false
       ..descontoReaisItemModo = descontoReaisModoUnitario
       ..clearSession();
     await config.save();

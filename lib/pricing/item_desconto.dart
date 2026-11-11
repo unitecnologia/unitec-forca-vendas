@@ -115,6 +115,7 @@ Map<String, dynamic> mapaItemPedido({
   bool descontoLinhaFixa = false,
   int? priceTableId,
   String? tabelaNivel,
+  double? precoOriginal,
 }) {
   final linha = descontoEfetivo(
     quantidade: quantidade,
@@ -126,12 +127,16 @@ Map<String, dynamic> mapaItemPedido({
   final percentual = descontoPercentual != null && descontoPercentual > 0;
   final unitario = descontoUnitario != null && descontoUnitario > 0;
   final nivel = (tabelaNivel ?? '').trim().toLowerCase();
+  final original = precoOriginal != null && (precoOriginal - precoUnitario).abs() > 0.009
+      ? dinheiroCentavos(precoOriginal)
+      : null;
   return {
     'product_id': productId,
     'quantidade': quantidade,
     'preco_unitario': precoUnitario,
     'desconto': linha,
     'descricao': descricao,
+    if (original != null) 'preco_original': original,
     if (unitario) 'desconto_unitario': descontoUnitario,
     if (descontoLinhaFixa && !percentual && !unitario) 'desconto_reais_modo': descontoReaisModoLinha,
     if (priceTableId != null && priceTableId > 0) 'price_table_id': priceTableId,

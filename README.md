@@ -33,26 +33,26 @@ flutter create .            # gera android/ e ios/ sem sobrescrever lib/
 flutter pub get
 ```
 
-### Permissões e HTTP em rede local (Android)
+### Overlay Android (`ci/` → `android/`)
 
-O ERP na LAN responde em **HTTP** (não HTTPS), então é preciso liberar tráfego "cleartext".
-Edite `android/app/src/main/AndroidManifest.xml`:
+A pasta `android/` é gerada pelo Flutter e **não é versionada**. Depois do
+`flutter create`, aplique o overlay versionado em `ci/`:
 
-```xml
-<manifest ...>
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-
-    <application
-        ...
-        android:usesCleartextTraffic="true">
-        ...
-    </application>
-</manifest>
+```bash
+# Linux/macOS / Codemagic
+bash ci/apply_android_overlay.sh
+# Windows (PowerShell)
+powershell -File ci/apply_android_overlay.ps1
 ```
+
+Isso copia o `AndroidManifest.xml` (cleartext HTTP, FileProvider, **sem Auto Backup**
+nem transferência aparelho-a-aparelho) e os XML em `res/xml/` (`file_paths`,
+`backup_rules`, `data_extraction_rules`). No Codemagic, o passo que aplica o
+Manifest deve chamar o `.sh` (ou copiar os mesmos quatro arquivos).
+
+Reinstalação do APK começa limpa (novo `deviceUuid` → autorização no ERP).
+**Atualização por cima** (mesmo pacote/assinatura, `versionCode` maior) preserva
+prefs, SQLite e pedidos pendentes.
 
 ## Rodar em desenvolvimento
 
@@ -62,10 +62,17 @@ flutter run
 
 ## Gerar o APK (distribuição interna)
 
-```bash
-flutter build apk --release
-# saída: build/app/outputs/flutter-apk/app-release.apk
+Sempre aplique o overlay antes de compilar. No Windows, o script abaixo faz
+overlay + `flutter build apk --release` assinado (não publica no GitHub):
+
+```powershell
+powershell -File ci/build_release_apk.ps1
+# saída típica: build/app/outputs/apk/release/Unitec-Forca-Vendas-<versão>.apk
 ```
+
+No Codemagic / Linux / macOS: `bash ci/apply_android_overlay.sh` e em seguida
+`flutter build apk --release` (com `android/key.properties` apontando para
+`ci/unitecfv-release.p12`).
 
 Distribua o `app-release.apk` internamente (sem Play Store). Para 10 aparelhos por
 loja, o servidor já roda com múltiplos workers (`PHP_CLI_SERVER_WORKERS`) e bind em

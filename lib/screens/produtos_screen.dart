@@ -47,34 +47,19 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   }
 
   Future<void> _carregarGrupos() async {
-    // Mesma regra da tela de vendas: grupos com flag App no ERP.
+    // Só cadastro de Grupos do ERP (sync → tabela grupos). Sem fallback em products.
     var nomes = <String>[];
-
     try {
       final rows = await _db.query(
-        "SELECT nome FROM grupos WHERE (ativo = 1 OR ativo IS NULL) "
-        "AND (mostrar_no_app = 1 OR mostrar_no_app IS NULL) "
+        "SELECT nome FROM grupos WHERE ativo = 1 AND mostrar_no_app = 1 "
         "AND nome IS NOT NULL AND TRIM(nome) <> '' ORDER BY nome",
       );
       nomes = rows
           .map((r) => (r['nome'] ?? '').toString().trim())
           .where((g) => g.isNotEmpty)
           .toList();
-    } catch (_) {}
-
-    if (nomes.isEmpty) {
-      try {
-        final rows = await _db.query(
-          "SELECT DISTINCT grupo AS nome FROM products WHERE ativo = 1 AND mostrar_no_app = 1 "
-          "AND grupo IS NOT NULL AND TRIM(grupo) <> '' ORDER BY grupo",
-        );
-        nomes = rows
-            .map((r) => (r['nome'] ?? '').toString().trim())
-            .where((g) => g.isNotEmpty)
-            .toList();
-      } catch (_) {
-        nomes = [];
-      }
+    } catch (_) {
+      nomes = [];
     }
 
     if (!mounted) return;

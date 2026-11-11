@@ -21,6 +21,7 @@ void main() {
       caixaNome: 'CAIXA',
       pixApiHabilitada: true,
       verTodosClientes: true,
+      alterarPrecoUnitario: true,
       impValorLiquido: true,
       impSemColunaDesconto: false,
       estoqueNome: 'LOJA',
@@ -59,6 +60,7 @@ void main() {
     expect(config.caixaNome, isEmpty);
     expect(config.pixApiHabilitada, isFalse);
     expect(config.verTodosClientes, isFalse);
+    expect(config.alterarPrecoUnitario, isFalse);
     expect(config.impValorLiquido, isFalse);
     expect(config.impSemColunaDesconto, isTrue);
     expect(config.estoqueNome, isEmpty);

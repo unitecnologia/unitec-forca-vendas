@@ -199,6 +199,17 @@ class SyncService extends ChangeNotifier {
           'Clientes: ${todosClientes ? 'todos (empresa)' : 'só carteira'}',
         );
       }
+      if (meta.containsKey('alterar_preco_unitario')) {
+        final alterarPreco = meta['alterar_preco_unitario'] == true;
+        if (config.alterarPrecoUnitario != alterarPreco) {
+          config.alterarPrecoUnitario = alterarPreco;
+          configChanged = true;
+          AppLog.instance.info(
+            'sync',
+            'Preço unitário: ${alterarPreco ? 'editável' : 'somente leitura'}',
+          );
+        }
+      }
       if (modoReais != null && config.descontoReaisItemModo != modoReais) {
         config.descontoReaisItemModo = modoReais;
         configChanged = true;
