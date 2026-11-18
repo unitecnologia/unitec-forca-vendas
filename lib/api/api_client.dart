@@ -356,6 +356,30 @@ class ApiClient {
     return _decode(r);
   }
 
+  /// Confirma bloqueio EM EDIÇÃO NO FV no ERP (exige conexão).
+  Future<Map<String, dynamic>> lockEdicaoPedido(String uuid) async {
+    final r = await _http
+        .post(
+          _uri('orders/$uuid/edicao/lock'),
+          headers: _headers(auth: true),
+          body: jsonEncode({'device_uuid': config.deviceUuid}),
+        )
+        .timeout(timeout);
+    return _decode(r);
+  }
+
+  /// Libera bloqueio após cancelamento confirmado pelo servidor.
+  Future<Map<String, dynamic>> unlockEdicaoPedido(String uuid) async {
+    final r = await _http
+        .post(
+          _uri('orders/$uuid/edicao/unlock'),
+          headers: _headers(auth: true),
+          body: jsonEncode({'device_uuid': config.deviceUuid}),
+        )
+        .timeout(timeout);
+    return _decode(r);
+  }
+
   Map<String, dynamic> _decode(http.Response r) {
     if (r.statusCode >= 200 && r.statusCode < 300) {
       if (r.body.isEmpty) return {};

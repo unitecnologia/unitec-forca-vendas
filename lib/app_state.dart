@@ -522,6 +522,7 @@ class AppState extends ChangeNotifier {
       config.pixApiHabilitada = user['pix_api_habilitada'] == true;
       config.verTodosClientes = user['ver_todos_clientes'] == true;
       config.alterarPrecoUnitario = user['alterar_preco_unitario'] == true;
+      config.permitirReabrirPedido = user['permitir_reabrir_pedido'] == true;
       if (user.containsKey('desconto_reais_item_modo')) {
         config.descontoReaisItemModo = normalizarDescontoReaisItemModo(user['desconto_reais_item_modo']);
       }
@@ -685,6 +686,7 @@ class AppState extends ChangeNotifier {
       ..cachedToken = ''
       ..verTodosClientes = false
       ..alterarPrecoUnitario = false
+      ..permitirReabrirPedido = false
       ..descontoReaisItemModo = descontoReaisModoUnitario
       ..clearSession();
     await config.save();

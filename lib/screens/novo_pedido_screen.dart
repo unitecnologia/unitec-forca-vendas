@@ -138,6 +138,7 @@ class NovoPedidoScreen extends StatefulWidget {
     this.documentoUuid,
     this.converterParaPedido = false,
     this.somenteLeitura = false,
+    this.reabrindo = false,
   });
 
   /// Cliente pré-selecionado (ex.: ao iniciar o pedido pela tela de Clientes).
@@ -155,6 +156,9 @@ class NovoPedidoScreen extends StatefulWidget {
 
   /// Abre o documento completo só para consulta (sem alterar/salvar).
   final bool somenteLeitura;
+
+  /// Reabertura de pedido já enviado (mesmo UUID/DAV; push com reabertura:true).
+  final bool reabrindo;
 
   @override
   State<NovoPedidoScreen> createState() => _NovoPedidoScreenState();
@@ -179,6 +183,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
   late String _tipo = widget.tipoInicial;
   String? _orcamentoOrigemUuid;
   String? _orcamentoOrigemNumero;
+  String? _numeroPreservado;
+  String? _numeroPedidoPreservado;
+
+  bool get _reabrindo =>
+      widget.reabrindo &&
+      widget.documentoUuid != null &&
+      widget.documentoUuid!.trim().isNotEmpty;
 
   // Forma de pagamento e prazo vêm sincronizados do ERP (flag "Disponível Mobile").
   List<Map<String, dynamic>> _formas = [];
@@ -334,6 +345,13 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
     // mantém o UUID novo gerado ao abrir a tela (pedido distinto no ERP).
     if (!converter) {
       _pedidoUuid = uuid;
+    }
+
+    if (_reabrindo || (!converter && (doc['tipo'] ?? '').toString() == 'pedido')) {
+      final nDav = (doc['numero'] ?? '').toString().trim();
+      final nPed = (doc['numero_pedido'] ?? '').toString().trim();
+      _numeroPreservado = nDav.isNotEmpty ? nDav : null;
+      _numeroPedidoPreservado = nPed.isNotEmpty ? nPed : null;
     }
 
     final frete = (extra['frete'] as num?)?.toDouble() ?? 0;
@@ -1177,6 +1195,7 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       if (_creditoLiberado) 'credito_liberado': true,
       if (_orcamentoOrigemUuid != null) 'orcamento_origem_uuid': _orcamentoOrigemUuid,
       if (_orcamentoOrigemNumero != null) 'orcamento_origem_numero': _orcamentoOrigemNumero,
+      if (_reabrindo) 'reabertura': true,
       if (pixExtra != null) ...pixExtra,
     };
 
@@ -1193,7 +1212,9 @@ class _NovoPedidoScreenState extends State<NovoPedidoScreen>
       'created_at': DateTime.now().toUtc().toIso8601String(),
       'status': _creditoAlerta != null ? 'financeiro' : 'pendente',
       'erro': null,
-      'numero': null,
+      // Reabertura: mantém DAV/número local até o push confirmar os mesmos valores.
+      'numero': _reabrindo ? _numeroPreservado : null,
+      'numero_pedido': _reabrindo ? _numeroPedidoPreservado : null,
       'extra_json': jsonEncode(extra),
     });
 

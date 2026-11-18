@@ -20,7 +20,7 @@ class LocalDb {
   }
 
   /// Abre um arquivo SQLite com o mesmo schema/migrations do app (testes).
-  static Future<Database> openAtPath(String path, {int version = 23}) {
+  static Future<Database> openAtPath(String path, {int version = 24}) {
     return openDatabase(
       path,
       version: version,
@@ -144,6 +144,20 @@ class LocalDb {
       // Pull completo: price_table_items agora traz nivel (habilitação Tab. Preço).
       await db.delete('sync_meta', where: 'k = ?', whereArgs: ['pull_etag']);
     }
+    if (oldVersion < 24) {
+      final cols = await db.rawQuery('PRAGMA table_info(pedidos_fv_cache)');
+      final names = cols.map((c) => c['name']).toSet();
+      if (!names.contains('em_edicao_fv')) {
+        await db.execute(
+          'ALTER TABLE pedidos_fv_cache ADD COLUMN em_edicao_fv INTEGER DEFAULT 0',
+        );
+      }
+      if (!names.contains('em_edicao_erp')) {
+        await db.execute(
+          'ALTER TABLE pedidos_fv_cache ADD COLUMN em_edicao_erp INTEGER DEFAULT 0',
+        );
+      }
+    }
   }
 
   /// Instância isolada (testes). Não usa o banco do aparelho.
@@ -262,7 +276,9 @@ class LocalDb {
             extra_json TEXT,
             created_at TEXT,
             status TEXT,
-            situacao TEXT
+            situacao TEXT,
+            em_edicao_fv INTEGER DEFAULT 0,
+            em_edicao_erp INTEGER DEFAULT 0
           )''';
 
   static const String _createVisitasSemVendaSql = '''
@@ -620,8 +636,72 @@ class LocalDb {
         'created_at': row['created_at']?.toString() ?? row['data']?.toString(),
         'status': row['status']?.toString(),
         'situacao': row['situacao']?.toString(),
+        'em_edicao_fv': row['em_edicao_fv'] == true || row['em_edicao_fv'] == 1 ? 1 : 0,
+        'em_edicao_erp': row['em_edicao_erp'] == true || row['em_edicao_erp'] == 1 ? 1 : 0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<bool> isEmEdicaoFv(String uuid) async {
+    final database = await db;
+    final rows = await database.query(
+      'pedidos_fv_cache',
+      columns: ['em_edicao_fv'],
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final v = rows.first['em_edicao_fv'];
+    return v == 1 || v == true;
+  }
+
+  Future<bool> isEmEdicaoErp(String uuid) async {
+    final database = await db;
+    final rows = await database.query(
+      'pedidos_fv_cache',
+      columns: ['em_edicao_erp'],
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final v = rows.first['em_edicao_erp'];
+    return v == 1 || v == true;
+  }
+
+  Future<void> setEmEdicaoFv(String uuid, bool value) async {
+    final database = await db;
+    final n = await database.update(
+      'pedidos_fv_cache',
+      {'em_edicao_fv': value ? 1 : 0},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
+    );
+    if (n == 0 && value) {
+      await database.insert(
+        'pedidos_fv_cache',
+        {
+          'uuid': uuid,
+          'tipo': 'pedido',
+          'em_edicao_fv': 1,
+          'em_edicao_erp': 0,
+          'itens_json': '[]',
+          'extra_json': '{}',
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+  }
+
+  Future<void> setEmEdicaoErp(String uuid, bool value) async {
+    final database = await db;
+    await database.update(
+      'pedidos_fv_cache',
+      {'em_edicao_erp': value ? 1 : 0},
+      where: 'uuid = ?',
+      whereArgs: [uuid],
     );
   }
 

@@ -102,6 +102,17 @@ double estoqueDisponivel(Map<String, dynamic> p) {
   return estoqueAtual(p) - estoqueReservado(p);
 }
 
+/// Situações em que o app pode reabrir/editar pedido (ainda não faturado / não cancelado).
+bool situacaoPermiteReabrir(String? situacao, {String? statusLocal}) {
+  final s = (situacao ?? '').trim().toLowerCase();
+  if (s == 'faturado' || s == 'cancelado') return false;
+  if (s == 'pendente' || s == 'confirmado' || s == 'financeiro' || s == 'aguardando') {
+    return true;
+  }
+  final st = (statusLocal ?? '').trim().toLowerCase();
+  return st == 'enviado' || st == 'financeiro';
+}
+
 /// Resumo compacto: Atual | Reserv. | Disp. (mesma ordem do ERP web).
 String estoqueLinhaCompacta(Map<String, dynamic> p, {String? unidade}) {
   final u = (unidade ?? (p['unidade'] ?? '').toString()).trim();

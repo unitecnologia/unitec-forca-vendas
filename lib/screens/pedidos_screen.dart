@@ -38,7 +38,8 @@ class _PedidosScreenState extends State<PedidosScreen> {
     final args = tipo != null ? [tipo] : <Object?>[];
 
     final outbox = await _db.query(
-      'SELECT o.uuid, o.numero, o.numero_pedido, o.total, o.status, o.erro, o.created_at, c.nome_razao '
+      'SELECT o.uuid, o.numero, o.numero_pedido, o.total, o.status, o.erro, o.created_at, '
+      'o.tipo, c.nome_razao '
       'FROM outbox_orders o LEFT JOIN customers c ON c.id = o.cliente_id '
       '$whereOutbox ORDER BY o.created_at DESC, CAST(o.numero AS INTEGER) DESC LIMIT 300',
       args,
@@ -54,7 +55,8 @@ class _PedidosScreenState extends State<PedidosScreen> {
       );
     } else {
       pedidosFvCache = await _db.query(
-        'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, c.nome_razao '
+        'SELECT p.uuid, p.numero, p.numero_pedido, p.total, p.status, p.situacao, p.created_at, '
+        'p.em_edicao_fv, p.em_edicao_erp, c.nome_razao '
         'FROM pedidos_fv_cache p LEFT JOIN customers c ON c.id = p.cliente_id '
         "WHERE p.tipo IS NULL OR p.tipo = 'pedido' "
         'ORDER BY p.created_at DESC, CAST(p.numero AS INTEGER) DESC, p.uuid DESC LIMIT 500',
@@ -96,8 +98,11 @@ class _PedidosScreenState extends State<PedidosScreen> {
         'numero_pedido': o['numero_pedido'],
         'total': o['total'],
         'status': o['status'],
+        'situacao': null,
         'erro': o['erro'],
         'created_at': o['created_at'],
+        'em_edicao_fv': false,
+        'em_edicao_erp': false,
       });
     }
     for (final p in pedidosFvCache) {
@@ -113,8 +118,11 @@ class _PedidosScreenState extends State<PedidosScreen> {
         'numero_pedido': p['numero_pedido'],
         'total': p['total'],
         'status': _statusFromPedidoFv(p),
+        'situacao': p['situacao'],
         'erro': '',
         'created_at': p['created_at'],
+        'em_edicao_fv': p['em_edicao_fv'] == 1 || p['em_edicao_fv'] == true,
+        'em_edicao_erp': p['em_edicao_erp'] == 1 || p['em_edicao_erp'] == true,
       });
       if (chave.isNotEmpty) chavesOutbox.add(chave);
     }
@@ -309,9 +317,97 @@ class _PedidosScreenState extends State<PedidosScreen> {
     if (mounted) await _carregar();
   }
 
-  void _menuDocumentos(BuildContext context, String uuid) {
+  bool _podeReabrirPedido(Map<String, dynamic> row) {
+    final cfg = context.read<AppState>().config;
+    if (!cfg.permitirReabrirPedido) return false;
+    if (widget.tipoFiltro == 'orcamento') return false;
+    final uuid = (row['uuid'] ?? '').toString().trim();
+    if (uuid.isEmpty) return false;
+    final status = (row['status'] ?? '').toString();
+    // Só pedidos já confirmados no ERP (não rascunho/pendente de envio).
+    if (status == 'pendente' || status == 'erro' || status == 'rascunho') return false;
+    if (row['em_edicao_erp'] == true) return false;
+    return situacaoPermiteReabrir(
+      row['situacao']?.toString(),
+      statusLocal: status,
+    );
+  }
+
+  Future<void> _cancelarEdicaoPedido(String uuid) async {
+    final state = context.read<AppState>();
+    try {
+      await state.api.unlockEdicaoPedido(uuid);
+      await _db.setEmEdicaoFv(uuid, false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Edição liberada no ERP.')),
+      );
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  Future<void> _reabrirPedido(Map<String, dynamic> row) async {
+    final uuid = (row['uuid'] ?? '').toString().trim();
+    if (uuid.isEmpty) return;
+    final state = context.read<AppState>();
+
+    if (row['em_edicao_erp'] == true || await _db.isEmEdicaoErp(uuid)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pedido em edição no ERP')),
+      );
+      return;
+    }
+
+    final jaBloqueadoLocal = await _db.isEmEdicaoFv(uuid);
+    if (!jaBloqueadoLocal) {
+      try {
+        await state.api.lockEdicaoPedido(uuid);
+        await _db.setEmEdicaoFv(uuid, true);
+        await _db.setEmEdicaoErp(uuid, false);
+      } catch (e) {
+        if (!mounted) return;
+        final msg = e.toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              msg.contains('Timeout') ||
+                      msg.toLowerCase().contains('socket') ||
+                      msg.toLowerCase().contains('connection')
+                  ? 'É necessário conexão com o ERP para iniciar a edição do pedido.'
+                  : msg,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NovoPedidoScreen(
+          documentoUuid: uuid,
+          tipoInicial: 'pedido',
+          reabrindo: true,
+        ),
+      ),
+    );
+    if (mounted) await _carregar();
+  }
+
+  void _menuDocumentos(BuildContext context, String uuid, {Map<String, dynamic>? row}) {
     final tipoForcado = widget.tipoFiltro;
     final ehOrcamento = tipoForcado == 'orcamento';
+    final podeReabrir = !ehOrcamento && row != null && _podeReabrirPedido(row);
+    final emEdicaoFv = row != null &&
+        (row['em_edicao_fv'] == true || row['em_edicao_fv'] == 1);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -319,6 +415,30 @@ class _PedidosScreenState extends State<PedidosScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (podeReabrir)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Brand.blue),
+                title: Text('Reabrir Pedido',
+                    style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
+                subtitle: Text('Editar pedido ainda não faturado (mesmo número)',
+                    style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _reabrirPedido(row);
+                },
+              ),
+            if (emEdicaoFv && !ehOrcamento)
+              ListTile(
+                leading: const Icon(Icons.lock_open_outlined, color: Brand.blue),
+                title: Text('Cancelar edição',
+                    style: TextStyle(fontSize: 16 + Brand.textBump01cm, fontWeight: FontWeight.w500)),
+                subtitle: Text('Liberar bloqueio no ERP',
+                    style: TextStyle(fontSize: 14 + Brand.textBump01cm)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _cancelarEdicaoPedido(uuid);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.visibility_outlined, color: Brand.blue),
               title: Text('Visualizar',
@@ -430,7 +550,8 @@ class _PedidosScreenState extends State<PedidosScreen> {
                         ehOrcamento: ehOrcamento,
                         onTap: ehOrcamento ? () => _abrirOrcamento(_rows[i]) : null,
                         onMenuPdf: () {
-                          final uuid = (_rows[i]['uuid'] ?? '').toString();
+                          final row = _rows[i];
+                          final uuid = (row['uuid'] ?? '').toString();
                           if (uuid.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -439,7 +560,7 @@ class _PedidosScreenState extends State<PedidosScreen> {
                             );
                             return;
                           }
-                          _menuDocumentos(context, uuid);
+                          _menuDocumentos(context, uuid, row: row);
                         },
                       ),
                     ),

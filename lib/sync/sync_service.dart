@@ -10,6 +10,7 @@ import '../db/local_db.dart';
 import '../log/app_log.dart';
 import '../media/produto_foto_cache.dart';
 import '../pricing/item_desconto.dart';
+import 'reabertura_push_resultado.dart';
 
 enum SyncStatus { idle, syncing, ok, offline, error }
 
@@ -537,6 +538,7 @@ class SyncService extends ChangeNotifier {
     final ordersPayload = ordersProntos.map((o) {
       final itens = (o['itens_json'] as String?) ?? '[]';
       final extra = _parseMap((o['extra_json'] as String?) ?? '');
+      final reabertura = extra['reabertura'] == true;
       return <String, dynamic>{
         'uuid': o['uuid'],
         'tipo': o['tipo'] ?? 'orcamento',
@@ -576,6 +578,7 @@ class SyncService extends ChangeNotifier {
         'created_at': o['created_at'],
         'device_uuid': config.deviceUuid,
         'itens': _parseItens(itens),
+        if (reabertura) 'reabertura': true,
       };
     }).toList();
 
@@ -608,21 +611,32 @@ class SyncService extends ChangeNotifier {
       final uuid = m['uuid']?.toString();
       if (uuid == null || uuid.isEmpty) continue;
       final st = (m['status'] ?? '').toString();
-      // ERP confirma com "importado"; "duplicado" também significa que já está no servidor.
-      if (st == 'importado' || m['duplicado'] == true) {
-        final situacao = (m['situacao'] ?? '').toString();
-        final localStatus = situacao == 'financeiro' ? 'financeiro' : 'enviado';
-        await _db.markOrder(
-          uuid,
-          localStatus,
-          numero: m['numero']?.toString(),
-          numeroPedido: m['numero_pedido']?.toString(),
-        );
-        enviados++;
-      } else if (st == 'erro') {
-        await _db.markOrder(uuid, 'erro', erro: m['erro']?.toString());
-        comErro++;
+      final duplicado = m['duplicado'] == true;
+      final reaberturaLocal = await _outboxEhReabertura(uuid);
+      final dec = decidirReaberturaPush(
+        status: st,
+        duplicado: duplicado,
+        reaberturaLocal: reaberturaLocal,
+        situacao: m['situacao']?.toString(),
+        erroServidor: m['erro']?.toString(),
+      );
+
+      await _db.markOrder(
+        uuid,
+        dec.statusLocal,
+        erro: dec.erro,
+        numero: (st == 'importado' || (duplicado && !reaberturaLocal))
+            ? m['numero']?.toString()
+            : null,
+        numeroPedido: (st == 'importado' || (duplicado && !reaberturaLocal))
+            ? m['numero_pedido']?.toString()
+            : null,
+      );
+      if (dec.liberarLockLocal) {
+        await _db.setEmEdicaoFv(uuid, false);
       }
+      if (dec.contarEnviado) enviados++;
+      if (dec.contarErro) comErro++;
     }
     if (comErro > 0) {
       AppLog.instance.warn('sync', 'Pedidos: $enviados enviado(s), $comErro com erro');
@@ -757,7 +771,16 @@ class SyncService extends ChangeNotifier {
       'created_at': row['created_at'] ?? row['data'],
       'status': status,
       'situacao': situacao,
+      'em_edicao_fv': row['em_edicao_fv'] == true || row['em_edicao_fv'] == 1,
+      'em_edicao_erp': row['em_edicao_erp'] == true || row['em_edicao_erp'] == 1,
     };
+  }
+
+  Future<bool> _outboxEhReabertura(String uuid) async {
+    final row = await _db.outboxOrderByUuid(uuid);
+    if (row == null) return false;
+    final extra = _parseMap((row['extra_json'] as String?) ?? '');
+    return extra['reabertura'] == true;
   }
 
   // Compatível com chamadas internas antigas.
